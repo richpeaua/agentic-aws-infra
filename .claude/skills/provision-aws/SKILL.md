@@ -39,14 +39,20 @@ Do not apply. Do not merge on the user's behalf unless asked.
 
 ## Review panel
 
-Before opening the PR, run the review panel so problems are caught and fixed early (shift-left). The four reviewers mirror the CI gates:
+Before opening the PR, run the review panel so problems are caught and fixed early (shift-left). Dispatch these four read-only subagents (defined in `.claude/agents/`) in parallel against the draft, telling each which root(s) changed:
 
-- Security - insecure configuration and risky patterns (mirrors Checkov).
-- Compliance - required tags, allowed regions, no unintended public buckets, naming (mirrors Conftest).
-- Cost - waste and cheaper alternatives (mirrors Infracost).
-- Correctness - Terraform quality, state design, architectural smells (mirrors tflint plus judgment).
+- `security-reviewer` - insecure configuration and risky patterns (mirrors Checkov).
+- `compliance-reviewer` - tags, naming, regions, public-bucket intent, structure (mirrors Conftest).
+- `cost-reviewer` - monthly cost, waste, cheaper alternatives (mirrors Infracost).
+- `correctness-reviewer` - Terraform quality, idempotency, state design, architecture (mirrors tflint plus judgment).
 
-If the panel subagents in `.claude/agents/` are defined (Phase 5), dispatch each reviewer against the draft in parallel; each is read-only. If they are not yet defined, perform the four reviews inline against the same criteria. Collect findings, apply fixes, and summarize them in the PR.
+Each returns findings with severities and a one-line verdict. Then:
+
+1. Fix every `blocker` and `high` finding; address or consciously accept `medium`/`low`/`nit`.
+2. Re-plan and confirm the plan still shows only intended changes.
+3. Summarize each reviewer's outcome in the PR body's "Review panel findings" section.
+
+If a reviewer cannot run (for example no subagent runtime), perform that review inline against the same rubric in its agent file. Do not skip a dimension.
 
 ## Foundational stacks (laptop-applied exception)
 
