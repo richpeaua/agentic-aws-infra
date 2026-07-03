@@ -60,6 +60,10 @@ Run the static checks (fmt, validate, tflint, Checkov on HCL) on fork PRs and sk
 
 `hashicorp/setup-terraform` installs a wrapper that adds annotations to stdout, which corrupts command-substitution capture like `$(terraform output -raw x)`. Set `terraform_wrapper: false` on the setup-terraform step in any job that captures Terraform stdout.
 
+### Checkov gate does not block a clearly-bad resource
+
+Do not use `soft-fail: true` with `hard-fail-on: [HIGH, CRITICAL]`. Open-source Checkov (without a Bridgecrew/Prisma API key) does not attach severity metadata to findings, so severity-based gating never matches and the gate exits 0 on everything, including a wide-open security group. The gate is configured to block on any finding instead; accept exceptions with an inline `#checkov:skip=CKV_AWS_ID:reason`. Verify enforcement with a throwaway bad resource: `checkov` must exit non-zero.
+
 ## Shell
 
 ### A heredoc or inline script errors under zsh

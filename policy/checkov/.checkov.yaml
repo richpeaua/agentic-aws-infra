@@ -1,17 +1,17 @@
 # Checkov configuration for the PR security gate.
 # Scans the Terraform HCL directory (so inline `#checkov:skip` waivers on
 # intentional exceptions are honored; those do not survive into a plan JSON).
-# Overall soft-fail, but hard-fail on HIGH and CRITICAL severity findings, so
-# medium/low are reported as advisory while high/critical block the PR.
+#
+# Blocks on ANY failed check. Open-source Checkov does not attach severity
+# metadata to findings, so severity-based gating (soft-fail plus
+# hard-fail-on: HIGH/CRITICAL) silently never fires and the gate blocks nothing.
+# Instead, every finding must be either fixed or explicitly waived inline with a
+# documented reason:
+#   #checkov:skip=CKV_AWS_ID:reason this is acceptable here
 framework:
   - terraform
 compact: true
 quiet: true
-soft-fail: true
-hard-fail-on:
-  - HIGH
-  - CRITICAL
-# Accepted exceptions. Prefer granular inline waivers in the Terraform itself:
-#   #checkov:skip=CKV_AWS_18:Reason this is acceptable here
 # Global skips (apply everywhere) go here, each with a justification comment.
+# Prefer granular inline waivers in the Terraform over global skips.
 skip-check: []
