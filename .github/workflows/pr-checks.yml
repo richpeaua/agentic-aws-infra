@@ -1,0 +1,133 @@
+name: pr-checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CONFTEST_VERSION: "0.56.0"
+
+jobs:
+  # Rego unit tests for the compliance policies. Pure logic; no AWS, always runs.
+  policy-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install conftest
+        run: |
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" | tar -xz conftest
+          sudo mv conftest /usr/local/bin/
+      - name: conftest verify
+        run: conftest verify --policy policy/conftest
+
+  # Determine which stack roots a PR affects, so gates only run on changed stacks.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.roots.outputs.roots }}
+      any: ${{ steps.roots.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: roots
+        run: |
+          roots="$(scripts/stack-roots.sh "origin/${{ github.event.pull_request.base.ref }}")"
+          echo "roots=$roots" >> "$GITHUB_OUTPUT"
+          if [ "$roots" = "[]" ]; then echo "any=false" >> "$GITHUB_OUTPUT"; else echo "any=true" >> "$GITHUB_OUTPUT"; fi
+          echo "Affected roots: $roots"
+
+  # Static checks on changed roots: format, validate, lint. No AWS needed.
+  static:
+    needs: discover
+    if: needs.discover.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJson(needs.discover.outputs.roots) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+      - uses: terraform-linters/setup-tflint@v4
+      - name: fmt
+        run: terraform -chdir=${{ matrix.root }} fmt -check -recursive
+      - name: validate
+        run: |
+          terraform -chdir=${{ matrix.root }} init -backend=false -input=false
+          terraform -chdir=${{ matrix.root }} validate
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --chdir=${{ matrix.root }} --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
+  # Plan + security + compliance + cost on changed roots. Needs AWS (read role).
+  # Skipped on fork PRs, which have no OIDC/secrets.
+  plan:
+    needs: discover
+    if: needs.discover.outputs.any == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJson(needs.discover.outputs.roots) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.READ_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+      - name: plan
+        run: |
+          terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
+          terraform -chdir=${{ matrix.root }} plan -input=false -out=tfplan
+          terraform -chdir=${{ matrix.root }} show -json tfplan > ${{ matrix.root }}/plan.json
+      - name: checkov (security)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          file: ${{ matrix.root }}/plan.json
+          config_file: policy/checkov/.checkov.yaml
+      - name: conftest (compliance)
+        run: |
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" | tar -xz conftest
+          ./conftest test ${{ matrix.root }}/plan.json --policy policy/conftest
+      - name: infracost (cost, advisory)
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - name: infracost scan
+        run: infracost scan ${{ matrix.root }} --llm || true
+
+  # Single required status check. Always runs; fails only if a real job failed,
+  # so branch protection can require just this one even when others skip.
+  gate:
+    needs: [policy-tests, static, plan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        run: |
+          results='${{ needs.policy-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }}'
+          echo "job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "A required job did not pass."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed or were skipped."
