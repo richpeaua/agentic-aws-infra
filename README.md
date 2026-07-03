@@ -1,93 +1,79 @@
 # Agentic AWS Infrastructure Workflow
 
-A laptop-driven workflow where a Claude Code agent authors Terraform, plans it, shows you the diff and cost, and applies it only after you approve.
+A production-minded workflow where a Claude Code agent authors Terraform, a multi-agent panel reviews it, and a GitOps pipeline applies it through automated quality, security, and compliance gates.
 
-See `DESIGN.md` for the full design and rationale.
-The agent's operating procedure lives in `.claude/skills/provision-aws/SKILL.md`.
+The full specification lives in [`DESIGN.md`](./DESIGN.md).
+The agent's operating procedure lives in [`.claude/skills/provision-aws/SKILL.md`](./.claude/skills/provision-aws/SKILL.md).
+
+> Status: this repository is being matured from a v1 laptop-driven workflow into the v2 GitOps design.
+> Some phases described below are still being built out. See "Build status" at the bottom.
 
 ## How it works
 
 1. You describe infrastructure in natural language.
-2. The agent writes a Terraform stack under `stacks/<name>/`.
-3. The agent runs `plan` and Infracost and shows you the changes and the monthly cost delta.
-4. Nothing is applied or destroyed until you explicitly approve.
-   The permission rules in `.claude/settings.json` enforce this: `apply` and `destroy` always prompt.
+2. The agent authors Terraform on a branch: a reusable module plus thin per-environment roots.
+3. The agent runs a local review panel of specialized subagents (security, compliance, cost, correctness), fixes their findings, and opens a pull request.
+4. CI runs the gate stack on the PR (plan, tflint, Checkov, Conftest/OPA, Infracost) and posts the results.
+5. You review and merge the PR. That is code approval.
+6. CI applies to dev and runs smoke tests, then waits at a GitHub Environment gate for your deploy approval before applying to prod.
 
-## One-time prerequisites (done by hand)
+The privileged `terraform apply` runs only in CI, never on a laptop, for application stacks.
+If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 
-The agent cannot do these for you.
+## Key properties
 
-1. Create or designate a dedicated AWS account used only for this workflow.
-2. In IAM Identity Center, create a permission set with `AdministratorAccess` and assign it to the account.
-3. Install the tools:
-   ```
-   brew install terraform awscli infracost
-   ```
-   Terraform must be 1.10 or later (native S3 state locking).
-4. Configure the SSO profile and log in:
-   ```
-   aws configure sso
-   aws sso login
-   export AWS_PROFILE=<your-profile-name>
-   ```
-5. Set up Infracost:
-   ```
-   infracost auth login
-   ```
-6. Verify:
-   ```
-   aws sts get-caller-identity
-   terraform version
-   infracost --version
-   ```
-
-## First run
-
-### Step 0: bootstrap the state bucket and budget
-
-```
-cd bootstrap
-cp terraform.tfvars.example terraform.tfvars   # then edit it
-terraform init
-terraform plan
-```
-
-Have the agent review the plan, then approve the apply.
-After the bucket exists:
-
-1. Uncomment the backend block in `bootstrap/backend.tf` and set `bucket` to the `state_bucket_name` output.
-2. Migrate the bootstrap state into S3:
-   ```
-   terraform init -migrate-state
-   ```
-
-### First real stack: static site
-
-```
-cd stacks/static-site
-```
-
-1. Set `bucket` in `backend.tf` to your state bucket name.
-2. `cp terraform.tfvars.example terraform.tfvars` and set a globally unique `site_bucket_name`.
-3. `terraform init`, then let the agent run the plan-review-apply loop.
-4. On success, open the `website_endpoint` output URL.
-
-To tear it down: `terraform destroy` (the agent will show the destroy plan and ask first).
+- GitOps: pull requests are the unit of change and the audit trail.
+- No long-lived cloud credentials: local work uses AWS SSO, CI uses GitHub OIDC.
+- Tiered gates: formatting, linting, security scanning, and custom compliance policy as code; cost is advisory.
+- Multi-agent review shifts quality left, before the PR; CI remains the authoritative backstop.
+- Dev and prod environments in a single dedicated account, separated by directory-per-environment plus a shared module.
 
 ## Repository layout
 
 ```
+.github/workflows/   CI: PR checks, deploy pipeline, drift detection
 .claude/
-  settings.json            # permission guardrails: apply/destroy always prompt
-  skills/provision-aws/    # the agent's operating procedure
-bootstrap/                 # state bucket + AWS Budget (run once)
-modules/                   # shared reusable modules
-stacks/<name>/             # one directory per project, isolated state
-DESIGN.md                  # full design
+  settings.json      local apply/destroy blocked for application stacks
+  agents/            security, compliance, cost, correctness reviewer subagents
+  skills/provision-aws/   the orchestrator's operating procedure
+foundation/          state backend + GitHub OIDC provider and roles (laptop-applied)
+modules/             reusable Terraform modules
+stacks/<name>/       per-stack thin roots: dev/ and prod/
+policy/              Conftest/OPA compliance policies and Checkov config
+tests/               post-apply smoke tests
+DESIGN.md            authoritative design specification
 ```
 
-## Daily use
+## Prerequisites
 
-Start a session, make sure `aws sso login` is current, and just tell the agent what you want:
-"add an SQS queue", "spin up a small VPC", "destroy the static site".
-It will follow the loop in the skill.
+- A dedicated AWS account with IAM Identity Center (SSO) and an `AdministratorAccess` permission set.
+- Local tooling: `terraform` (>= 1.10), `awscli`, `infracost`, `tflint`, `checkov`, and `conftest`.
+- An Infracost account (`infracost auth login`) that belongs to an organization.
+
+## Local setup
+
+```
+aws sso login --profile aws-infra
+export AWS_PROFILE=aws-infra
+
+# Backend config holds the state bucket name and is git-ignored.
+cp backend.tfbackend.example <root>/backend.tfbackend   # then set the bucket
+terraform -chdir=<root> init -backend-config=backend.tfbackend
+```
+
+## Build status
+
+The workflow is being built in phases (see the end of `DESIGN.md`):
+
+1. Repo and scrub - done.
+2. Foundation (state backend + OIDC roles) - in progress.
+3. GitHub configuration (environments, secrets, branch protection).
+4. Gates and policy (CI workflows, tflint, Checkov, Conftest).
+5. Agent review panel and skill rewrite.
+6. Refactor stacks into module plus dev/prod roots.
+7. End-to-end pipeline validation.
+8. QA layer (smoke tests, native `terraform test`).
+
+## License
+
+MIT. See [`LICENSE`](./LICENSE).
