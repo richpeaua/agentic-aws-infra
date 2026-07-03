@@ -95,7 +95,9 @@ jobs:
       - name: plan
         run: |
           terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
-          terraform -chdir=${{ matrix.root }} plan -input=false -out=tfplan
+          # -lock=false: the read-only role cannot write the S3 lockfile, and a
+          # plan is a read-only simulation that does not need the state lock.
+          terraform -chdir=${{ matrix.root }} plan -input=false -lock=false -out=tfplan
           terraform -chdir=${{ matrix.root }} show -json tfplan > ${{ matrix.root }}/plan.json
       - name: checkov (security)
         uses: bridgecrewio/checkov-action@v12
