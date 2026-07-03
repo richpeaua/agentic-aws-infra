@@ -19,7 +19,7 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 - `foundation/state-backend` - S3 state bucket + monthly AWS Budget.
 - `foundation/github-oidc` - OIDC provider + three IAM roles.
-- `stacks/static-site` - v1 flat layout, one public S3 site, applied from laptop in v1. Pending refactor (Phase 6) and re-provision through the pipeline (Phase 7).
+- `stacks/static-site` - refactored to `modules/static-site` + `dev`/`prod` roots (Phase 6). The old v1 flat demo bucket was destroyed. The dev/prod stacks are not yet deployed; they deploy through the pipeline in Phase 7.
 
 ## Tooling in the repo
 

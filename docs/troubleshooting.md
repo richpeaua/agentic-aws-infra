@@ -47,6 +47,10 @@ The role trust policy `sub` did not match the workflow's token.
 Check the role in `foundation/github-oidc`: read role expects `repo:<org>/<repo>:pull_request`; apply roles expect `repo:<org>/<repo>:environment:<env>`.
 The job must target the matching GitHub Environment and set `permissions: id-token: write`.
 
+### PR plan fails with `AccessDenied ... s3:PutObject ... terraform.tfstate.tflock`
+
+The S3 native lockfile (`use_lockfile = true`) writes a `.tflock` object to acquire the lock, which needs `s3:PutObject`. The CI read-only role has only `ReadOnlyAccess`, so it cannot write the lock. Run PR plans with `-lock=false`: a plan is a read-only simulation and does not need the state lock. Apply jobs (which use the apply role) still lock normally.
+
 ### Fork PRs cannot plan against AWS
 
 By design: GitHub does not give secrets or OIDC to fork-triggered workflows.

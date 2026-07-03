@@ -1,10 +1,10 @@
 # Checkov configuration for the PR security gate.
-# Runs against the Terraform plan JSON so it sees what will actually deploy.
+# Scans the Terraform HCL directory (so inline `#checkov:skip` waivers on
+# intentional exceptions are honored; those do not survive into a plan JSON).
 # Overall soft-fail, but hard-fail on HIGH and CRITICAL severity findings, so
 # medium/low are reported as advisory while high/critical block the PR.
 framework:
   - terraform
-  - terraform_plan
 compact: true
 quiet: true
 soft-fail: true
