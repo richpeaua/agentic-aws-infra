@@ -1,0 +1,5 @@
+# Copy to backend.tfbackend in each root that needs remote state, then:
+#   terraform init -backend-config=backend.tfbackend
+# backend.tfbackend is git-ignored because the bucket name contains the account ID.
+
+bucket = "REPLACE_WITH_STATE_BUCKET_NAME"

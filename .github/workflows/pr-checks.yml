@@ -100,8 +100,9 @@ jobs:
       - name: checkov (security)
         uses: bridgecrewio/checkov-action@v12
         with:
-          file: ${{ matrix.root }}/plan.json
+          directory: ${{ matrix.root }}
           config_file: policy/checkov/.checkov.yaml
+          download_external_modules: false
       - name: conftest (compliance)
         run: |
           curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" | tar -xz conftest
