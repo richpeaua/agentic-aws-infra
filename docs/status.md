@@ -19,7 +19,8 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 - `foundation/state-backend` - S3 state bucket + monthly AWS Budget.
 - `foundation/github-oidc` - OIDC provider + three IAM roles.
-- `stacks/static-site` - `modules/static-site` + `dev`/`prod` roots. Both environments deployed through the pipeline (Phase 7) and live. Buckets `aws-agentic-infra-static-site-{dev,prod}-<account>`.
+- `stacks/static-site` - `modules/static-site` + `dev`/`prod` roots. Both environments deployed through the pipeline and live. Buckets `aws-agentic-infra-static-site-{dev,prod}-<account>`.
+- `stacks/task-queue` - `modules/task-queue` + `dev`/`prod` roots. SQS work queue + dead-letter queue, deployed to both environments through the pipeline. Queues `aws-agentic-infra-task-queue-{dev,prod}` (+ `-dlq`). Added end to end via the loop (scaffolder -> review panel -> PR #17 -> deploy).
 
 ## Tooling in the repo
 
