@@ -8,8 +8,8 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 - [x] Phase 1 - Repo and scrub (DESIGN v2, README, LICENSE, AGENTS.md).
 - [x] Phase 2 - Foundation: `foundation/state-backend` and `foundation/github-oidc` applied (OIDC provider + read/dev-apply/prod-apply roles).
-- [x] Phase 3 - GitHub configuration: `dev` and `production` environments, variables, role-ARN secrets, branch protection. Owner still to set `INFRACOST_API_KEY`.
-- [ ] Phase 4 - PR gates + policy (#3): `pr-checks.yml`, tflint, Checkov, Conftest, Infracost.
+- [x] Phase 3 - GitHub configuration: `dev` and `production` environments, variables, role-ARN secrets, branch protection. `INFRACOST_API_KEY` set.
+- [x] Phase 4 - PR gates + policy (#3): `pr-checks.yml` (policy-tests, discover, static, plan, gate), tflint, Checkov, Conftest + rego unit tests, Infracost. `gate` is the required status check on `main`. Gates are scoped to changed stacks.
 - [ ] Phase 5 - Agent review panel + skill rewrite (#4). SKILL.md already reconciled to v2; panel subagents in `.claude/agents/` still to add.
 - [ ] Phase 6 - Refactor static-site into module + dev/prod roots (#5).
 - [ ] Phase 7 - Deploy pipeline + end-to-end validation (#6).
