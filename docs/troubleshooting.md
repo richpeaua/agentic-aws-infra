@@ -56,6 +56,14 @@ The S3 native lockfile (`use_lockfile = true`) writes a `.tflock` object to acqu
 By design: GitHub does not give secrets or OIDC to fork-triggered workflows.
 Run the static checks (fmt, validate, tflint, Checkov on HCL) on fork PRs and skip the AWS-dependent steps.
 
+## CI checks
+
+### The "Infracost" check shows failure on a PR
+
+This is the Infracost Cloud GitHub App running its own tagging / FinOps / cloud-security policies, which are separate from and more opinionated than this repo's policy layer. It will always fail on the intentionally-public demo bucket and on tag keys it does not recognize.
+
+It is expected and non-blocking. The policy layer we own and enforce is Checkov (security) plus Conftest (compliance); cost is advisory. The only required status check is `gate`. Do not change infrastructure to satisfy the Infracost Cloud policies; adjust them in the Infracost dashboard if desired.
+
 ## Shell
 
 ### A heredoc or inline script errors under zsh
