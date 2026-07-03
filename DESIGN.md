@@ -185,16 +185,11 @@ DESIGN.md
 README.md
 ```
 
-## Agent operating rules (quick reference)
+## Agent operating rules
 
-- Follow the end-to-end loop for every change.
-- Never run `terraform apply` or `terraform destroy` for an application stack. Apply happens only in CI.
-- Author each stack as a module in `modules/<name>/` consumed by thin per-environment roots in `stacks/<name>/{dev,prod}/`.
-- Run the review panel before opening a PR, and fix its findings.
-- Prefer pinned community modules for complex infrastructure and raw resources for simple things.
-- Apply the mandatory `default_tags` set, and include the environment in resource names.
-- Never commit account IDs, bucket names, role ARNs, or emails. Use partial backend config and git-ignored files.
-- Default to region `us-east-1`.
+The operating rules for agents live in [`AGENTS.md`](./AGENTS.md), the authoritative tool-neutral reference.
+`AGENTS.md` is the "what to do"; this document is the "why".
+Claude Code auto-loads them via `CLAUDE.md`, which imports `AGENTS.md`.
 
 ## Manual prerequisites (human, performed once)
 

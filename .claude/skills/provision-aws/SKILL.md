@@ -7,6 +7,7 @@ description: Author, plan, review, and apply AWS infrastructure as Terraform fro
 
 Provision AWS infrastructure as Terraform following the plan-review-apply loop.
 The authoritative design lives in `DESIGN.md` at the repository root; read it if you need the full rationale.
+The operating rules live in `AGENTS.md`; follow them.
 This skill is the operational procedure.
 
 ## Non-negotiable rules
