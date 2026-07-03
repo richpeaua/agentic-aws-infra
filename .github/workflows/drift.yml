@@ -1,0 +1,79 @@
+name: drift
+
+on:
+  schedule:
+    - cron: "17 9 * * *" # daily at 09:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.list.outputs.roots }}
+      any: ${{ steps.list.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          roots="$(scripts/stack-roots.sh)"
+          echo "roots=$roots" >> "$GITHUB_OUTPUT"
+          [ "$roots" = "[]" ] && echo "any=false" >> "$GITHUB_OUTPUT" || echo "any=true" >> "$GITHUB_OUTPUT"
+
+  # Plan each root against real state. A non-empty diff is drift (someone changed
+  # infra outside the pipeline). Report it as a GitHub issue (which emails the
+  # owner) and fail the job so the scheduled run goes red.
+  drift:
+    needs: discover
+    if: needs.discover.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJson(needs.discover.outputs.roots) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.READ_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+          terraform_wrapper: false
+      - id: plan
+        run: |
+          set -euo pipefail
+          terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}" >/dev/null
+          set +e
+          terraform -chdir=${{ matrix.root }} plan -input=false -lock=false -detailed-exitcode -no-color > plan.txt 2>&1
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          tail -c 4000 plan.txt > summary.txt || true
+      - name: report drift
+        if: steps.plan.outputs.exitcode == '2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          root="${{ matrix.root }}"
+          title="Drift detected: $root"
+          body="$(printf 'Scheduled drift detection found out-of-band changes in `%s`.\n\nInvestigate and reconcile (re-apply through the pipeline, or update code to match reality).\n\n```\n%s\n```\n' "$root" "$(cat summary.txt)")"
+          existing="$(gh issue list --search "$title" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --label drift --body "$body"
+          fi
+      - name: fail on drift or error
+        if: steps.plan.outputs.exitcode != '0'
+        run: |
+          if [ "${{ steps.plan.outputs.exitcode }}" = "2" ]; then
+            echo "Drift detected in ${{ matrix.root }} (issue filed)."
+          else
+            echo "Plan errored for ${{ matrix.root }}:"; cat plan.txt
+          fi
+          exit 1

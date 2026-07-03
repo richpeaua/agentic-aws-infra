@@ -13,7 +13,7 @@ Detailed phase specs are the GitHub issues (epic: #8).
 - [ ] Phase 5 - Agent review panel + skill rewrite (#4). SKILL.md already reconciled to v2; panel subagents in `.claude/agents/` still to add.
 - [x] Phase 6 - Refactor static-site into module + dev/prod roots (#5). Merged #10. Old v1 demo destroyed. First stack validated through the full gate pipeline (surfaced and fixed the read-role + native-lockfile issue via `-lock=false`).
 - [x] Phase 7 - Deploy pipeline + end-to-end validation (#6). `deploy.yml` applies dev -> smoke -> production gate (human approval) -> prod -> smoke. Validated: dev and prod static-site both deployed through CI and live (HTTP 200).
-- [ ] Phase 8 - QA layer: smoke tests, terraform test, drift (#7).
+- [x] Phase 8 - QA layer: native `terraform test` for modules (mock provider, in pr-checks), post-apply smoke tests (`scripts/smoke.sh` in deploy), scheduled `drift.yml` (nightly plan, files a drift issue). deploy now only applies roots with a real plan diff (#7).
 
 ## Deployed footprint
 

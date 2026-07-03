@@ -116,16 +116,35 @@ jobs:
       - name: infracost scan
         run: infracost scan ${{ matrix.root }} --llm || true
 
+  # Native `terraform test` for every module that ships tests. Uses mocked
+  # providers, so it runs offline with no AWS credentials.
+  module-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+      - name: terraform test
+        run: |
+          modules="$(find modules -type d -name tests | sed 's:/tests$::' | sort -u)"
+          if [ -z "$modules" ]; then echo "no modules with tests"; exit 0; fi
+          for m in $modules; do
+            echo "== terraform test: $m =="
+            terraform -chdir="$m" init -backend=false -input=false
+            terraform -chdir="$m" test
+          done
+
   # Single required status check. Always runs; fails only if a real job failed,
   # so branch protection can require just this one even when others skip.
   gate:
-    needs: [policy-tests, static, plan]
+    needs: [policy-tests, module-tests, static, plan]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         run: |
-          results='${{ needs.policy-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }}'
+          results='${{ needs.policy-tests.result }} ${{ needs.module-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }}'
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
