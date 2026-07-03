@@ -1,77 +1,67 @@
 ---
 name: provision-aws
-description: Author, plan, review, and apply AWS infrastructure as Terraform from this repository. Use whenever the user wants to create, change, or destroy AWS cloud resources, add a new stack, or provision infrastructure. Enforces the plan-review-apply loop with human approval gating apply and destroy.
+description: Author AWS infrastructure as Terraform and open a pull request for CI to apply. Use whenever the user wants to create, change, or destroy AWS cloud resources or add a stack. Enforces the GitOps loop (author, review panel, PR); never applies application stacks locally.
 ---
 
 # provision-aws
 
-Provision AWS infrastructure as Terraform following the plan-review-apply loop.
-The authoritative design lives in `DESIGN.md` at the repository root; read it if you need the full rationale.
-The operating rules live in `AGENTS.md`; follow them.
-This skill is the operational procedure.
+The procedure for provisioning AWS infrastructure in this repository.
+The operating rules live in `AGENTS.md`; follow them. The full rationale is in `DESIGN.md`.
+This skill is the step-by-step procedure that implements the workflow in `AGENTS.md`.
 
 ## Non-negotiable rules
 
-1. Never run `terraform apply` or `terraform destroy` without explicit human approval in the current conversation.
-   Approval for one change never carries over to another change.
-2. Always run `terraform plan` and Infracost first, and present both the plan diff and the monthly cost delta before asking for approval.
-3. Every stack lives in its own directory under `stacks/<name>/` with its own S3 state key.
-4. Every resource is tagged via the provider `default_tags` block.
-5. Prefer pinned community modules (`terraform-aws-modules/*`) for complex infrastructure; use raw resources for simple things.
-6. Default region is `us-east-1` unless the user says otherwise.
+1. If a resource exists in AWS, it got there through a merged, gated, CI-run apply. Never run `terraform apply` or `terraform destroy` for an application stack.
+2. Every application change goes through a pull request. The agent authors and opens PRs; it does not apply.
+3. The only local-apply exception is foundational stacks under `foundation/` (see below), and only a human applies those.
+4. Never commit account IDs, bucket names, role ARNs, or emails. Run `scripts/scan-secrets.sh` before committing.
 
-## Preconditions to check before doing anything
+## Preconditions
 
-Run these read-only checks. If any fail, stop and tell the user which prerequisite is missing (see `README.md`).
+Run `scripts/preflight.sh`. If it reports missing credentials or tooling, stop and tell the user which prerequisite is missing (see `README.md`).
+Read `docs/status.md` to orient on the current state.
 
-- `aws sts get-caller-identity` succeeds and points at the dedicated account. If it fails, the user needs to run `aws sso login`.
-- `terraform version` reports 1.10 or later (required for the native S3 lockfile).
-- `infracost --version` works. Infracost v2 requires `infracost auth login` and membership in an org on dashboard.infracost.io. A `scan` that fails with "User has no associated organization" means the org step is missing.
-- The state bucket exists. If it does not, the bootstrap has not run yet: go to "Bootstrap" below first.
-
-## The plan-review-apply loop
-
-Follow this for every change.
+## The loop
 
 1. Understand the request. Ask clarifying questions only if genuinely blocked.
-2. Decide the stack. New workload means a new `stacks/<name>/` directory. Existing workload means edit that stack.
-3. Author the Terraform:
-   - Provider block with region and `default_tags` (`Project`, `Stack`, `ManagedBy = "terraform"`, `Environment`).
-   - S3 backend block with a unique `key` of `stacks/<name>/terraform.tfstate` and `use_lockfile = true`.
-   - Pinned community modules for complex pieces, raw resources for simple ones.
-4. `cd stacks/<name>` and run `terraform init`, `terraform fmt`, `terraform validate`.
-5. Run `terraform plan -out=tfplan`.
-6. Run `infracost scan . --llm` in the stack directory and capture the monthly cost figure plus any FinOps/tagging policy findings. Notes on Infracost v2:
-   - `scan` takes the path positionally (`infracost scan .`), not `--path`. There is no `--terraform-var` flag; pass required variables via `TF_VAR_<name>` environment variables.
-   - `--llm` gives compact, token-efficient output suited to this workflow.
-   - It renamed `breakdown` to `scan` and requires the user to belong to an org on dashboard.infracost.io.
-7. Present to the user: a concise summary of what will be created/changed/destroyed, the plan diff highlights, and the monthly cost delta. Then stop and ask for approval.
-8. On explicit approval only: run `terraform apply tfplan`.
-9. Report the outputs (`terraform output`).
+2. Scaffold or edit the stack:
+   - New stack: `scripts/new-stack.sh <name>` generates the module and dev/prod roots from the template.
+   - Existing stack: edit the module in `modules/<name>/`.
+3. Author the resources in `modules/<name>/`. Follow the naming and tagging conventions in `AGENTS.md` (base names on `local.name`; append `var.account_id` for globally-unique names; `default_tags` live in the root).
+4. Verify locally with the tools CI uses:
+   - `scripts/check.sh stacks/<name>/dev` (fmt, validate, tflint, scanners).
+   - `scripts/plan.sh stacks/<name>/dev` (init, plan, Infracost). Repeat for `prod`.
+5. Run the review panel (below), fix its findings, and re-plan until the plan shows only intended changes and a re-plan is a no-op.
+6. `scripts/scan-secrets.sh`, then create a `<type>/<scope>` branch, commit, push, and open a PR with `gh`. Fill in the PR template completely (plan summary, cost, panel findings, Definition of Done).
+7. Hand off: CI runs the gates; the human reviews and merges; CI applies dev then, after the production gate, prod.
+
+Do not apply. Do not merge on the user's behalf unless asked.
+
+## Review panel
+
+Before opening the PR, run the review panel so problems are caught and fixed early (shift-left). The four reviewers mirror the CI gates:
+
+- Security - insecure configuration and risky patterns (mirrors Checkov).
+- Compliance - required tags, allowed regions, no unintended public buckets, naming (mirrors Conftest).
+- Cost - waste and cheaper alternatives (mirrors Infracost).
+- Correctness - Terraform quality, state design, architectural smells (mirrors tflint plus judgment).
+
+If the panel subagents in `.claude/agents/` are defined (Phase 5), dispatch each reviewer against the draft in parallel; each is read-only. If they are not yet defined, perform the four reviews inline against the same criteria. Collect findings, apply fixes, and summarize them in the PR.
+
+## Foundational stacks (laptop-applied exception)
+
+Stacks under `foundation/` (state backend, GitHub OIDC roles) are the chicken-and-egg exception: they are what let CI apply everything else, so a human applies them locally.
+For these: author, `scripts/check.sh`, `scripts/plan.sh`, present the plan and cost, and hand off the `terraform apply` to the human. The agent still does not apply.
+
+## Command surface
+
+- `scripts/preflight.sh` - verify creds and tooling.
+- `scripts/new-stack.sh <name>` - scaffold a stack.
+- `scripts/check.sh <root>` - static checks (same as CI).
+- `scripts/plan.sh <root>` - plan + cost.
+- `scripts/scan-secrets.sh` - pre-commit secret scan.
 
 ## Destroying
 
-- Destroy is per-stack: `cd stacks/<name>` then `terraform plan -destroy` to preview, present it, and only after explicit approval run `terraform destroy`.
-- Never destroy the bootstrap stack casually; it holds the state bucket and budget for everything else.
-
-## Bootstrap (step zero, run once)
-
-The state bucket must exist before any stack can use the S3 backend. The bootstrap solves this chicken-and-egg with local state, then migrates.
-
-1. `cd bootstrap`.
-2. Ensure the S3 backend block in `backend.tf` is commented out (it is by default).
-3. Fill in `terraform.tfvars` from `terraform.tfvars.example` (unique bucket name, budget limit, alert email).
-4. `terraform init`, then run the plan-review-apply loop above to create the state bucket and AWS Budget.
-5. After apply, uncomment the backend block in `bootstrap/backend.tf`, then run `terraform init -migrate-state` and confirm the move to S3.
-
-## First real stack
-
-The first target is `stacks/static-site/`, a static S3 website. Use it to validate the whole loop end to end before provisioning anything expensive.
-
-## Conventions reference
-
-- Directory per stack: `stacks/<name>/`.
-- Shared reusable modules: `modules/`.
-- State keys: `bootstrap/terraform.tfstate` for bootstrap, `stacks/<name>/terraform.tfstate` for stacks.
-- Always pin module and provider versions.
-- Never commit `terraform.tfvars`, `*.tfstate`, `tfplan`, or `.terraform/` (see `.gitignore`).
+Destroys go through the pipeline too: open a PR that removes the stack (or the resources), let the gates run, and let CI apply the destroy.
+Never destroy an application stack from the laptop. Never destroy `foundation/` casually; it holds the state and roles for everything.
