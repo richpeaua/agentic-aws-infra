@@ -1,17 +1,31 @@
 # Checkov configuration for the PR security gate.
 # Scans the Terraform HCL directory (so inline `#checkov:skip` waivers on
 # intentional exceptions are honored; those do not survive into a plan JSON).
-# Overall soft-fail, but hard-fail on HIGH and CRITICAL severity findings, so
-# medium/low are reported as advisory while high/critical block the PR.
+#
+# Blocks on ANY failed check. Open-source Checkov does not attach severity
+# metadata to findings, so severity-based gating (soft-fail plus
+# hard-fail-on: HIGH/CRITICAL) silently never fires and the gate blocks nothing.
+# Instead, every finding must be either fixed or explicitly waived.
+#
+# Two kinds of waiver:
+#   - Resource-specific intentional exceptions (for example an intentionally
+#     public bucket) are waived inline in the Terraform with a reason:
+#       #checkov:skip=CKV_AWS_ID:reason
+#   - Repo-wide relaxations (checks that are not part of this personal/demo
+#     repo's security bar) are listed below with a justification each.
 framework:
   - terraform
 compact: true
 quiet: true
-soft-fail: true
-hard-fail-on:
-  - HIGH
-  - CRITICAL
-# Accepted exceptions. Prefer granular inline waivers in the Terraform itself:
-#   #checkov:skip=CKV_AWS_18:Reason this is acceptable here
-# Global skips (apply everywhere) go here, each with a justification comment.
-skip-check: []
+skip-check:
+  # Defense-in-depth / operational best practices consciously relaxed for a
+  # single-region personal/demo AWS account. The gate still blocks the
+  # high-value checks (missing encryption, public access without an inline
+  # waiver, open ingress, IAM wildcards, plaintext secrets, and so on).
+  - CKV_AWS_18   # S3 access logging: no central log bucket in this personal setup
+  - CKV_AWS_21   # S3 versioning: content is fully Terraform-managed and reproducible
+  - CKV_AWS_144  # S3 cross-region replication: out of scope for single-region
+  - CKV_AWS_145  # S3 KMS encryption: buckets use SSE-S3 (AES256) by choice; encryption at rest is present
+  - CKV2_AWS_6   # S3 public access block: intentionally-public buckets manage access via inline-waived settings
+  - CKV2_AWS_61  # S3 lifecycle configuration: a cost/ops concern, covered by Infracost
+  - CKV2_AWS_62  # S3 event notifications: not required for these workloads

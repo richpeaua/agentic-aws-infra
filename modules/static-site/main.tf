@@ -52,6 +52,7 @@ resource "aws_s3_bucket_public_access_block" "site" {
 }
 
 data "aws_iam_policy_document" "public_read" {
+  #checkov:skip=CKV_AWS_283:Intentionally public demo website; grants read-only s3:GetObject to anonymous users, consistent with the public-access-block waiver above
   statement {
     sid       = "PublicReadGetObject"
     effect    = "Allow"

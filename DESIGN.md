@@ -105,7 +105,7 @@ Every PR runs the full stack. Enforcement is tiered so that signal stays high.
 | --- | --- | --- |
 | `terraform fmt`, `validate` | Formatting and syntax | Blocks merge |
 | `tflint` | AWS-aware linting and provider misconfig | Blocks merge on errors |
-| Checkov | Security scanning against the plan (CIS and best practice) | Blocks on HIGH and CRITICAL; MEDIUM and LOW are advisory. A suppressions file records accepted exceptions |
+| Checkov | Security scanning of the Terraform HCL (CIS and best practice) | Blocks on any finding. Open-source Checkov has no severity metadata, so severity-based gating silently never fires; instead every finding is fixed or explicitly waived inline with a documented `#checkov:skip` reason |
 | Conftest / OPA | Custom compliance policy as code, written in Rego (required tags, allowed regions, no public buckets unless explicitly flagged, naming standards) | Blocks merge on any deny |
 | Infracost | Monthly cost delta | Advisory only, never blocks |
 
