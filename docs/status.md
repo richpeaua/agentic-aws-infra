@@ -11,7 +11,7 @@ Detailed phase specs are the GitHub issues (epic: #8).
 - [x] Phase 3 - GitHub configuration: `dev` and `production` environments, variables, role-ARN secrets, branch protection. `INFRACOST_API_KEY` set.
 - [x] Phase 4 - PR gates + policy (#3): `pr-checks.yml` (policy-tests, discover, static, plan, gate), tflint, Checkov, Conftest + rego unit tests, Infracost. `gate` is the required status check on `main`. Gates are scoped to changed stacks.
 - [ ] Phase 5 - Agent review panel + skill rewrite (#4). SKILL.md already reconciled to v2; panel subagents in `.claude/agents/` still to add.
-- [ ] Phase 6 - Refactor static-site into module + dev/prod roots (#5).
+- [x] Phase 6 - Refactor static-site into module + dev/prod roots (#5). Merged #10. Old v1 demo destroyed. First stack validated through the full gate pipeline (surfaced and fixed the read-role + native-lockfile issue via `-lock=false`).
 - [ ] Phase 7 - Deploy pipeline + end-to-end validation (#6).
 - [ ] Phase 8 - QA layer: smoke tests, terraform test, drift (#7).
 
