@@ -5,8 +5,7 @@ A production-minded workflow where a Claude Code agent authors Terraform, a mult
 The full specification lives in [`DESIGN.md`](./DESIGN.md).
 The agent's operating procedure lives in [`.claude/skills/provision-aws/SKILL.md`](./.claude/skills/provision-aws/SKILL.md).
 
-> Status: this repository is being matured from a v1 laptop-driven workflow into the v2 GitOps design.
-> Some phases described below are still being built out. See "Build status" at the bottom.
+> Status: complete. The v2 GitOps design is fully built and operational end to end. See "Build status" at the bottom and `docs/status.md`.
 
 ## How it works
 
@@ -63,16 +62,16 @@ terraform -chdir=<root> init -backend-config=backend.tfbackend
 
 ## Build status
 
-The workflow is being built in phases (see the end of `DESIGN.md`):
+Complete. All eight phases are built and the pipeline is operational end to end (see `docs/status.md` for the current footprint):
 
 1. Repo and scrub - done.
-2. Foundation (state backend + OIDC roles) - in progress.
-3. GitHub configuration (environments, secrets, branch protection).
-4. Gates and policy (CI workflows, tflint, Checkov, Conftest).
-5. Agent review panel and skill rewrite.
-6. Refactor stacks into module plus dev/prod roots.
-7. End-to-end pipeline validation.
-8. QA layer (smoke tests, native `terraform test`).
+2. Foundation (state backend + OIDC roles) - done.
+3. GitHub configuration (environments, secrets, branch protection) - done.
+4. Gates and policy (CI workflows, tflint, Checkov, Conftest) - done.
+5. Agent review panel and skill rewrite - done.
+6. Refactor stacks into module plus dev/prod roots - done.
+7. Deploy pipeline and end-to-end validation - done.
+8. QA layer (smoke tests, native `terraform test`, drift detection) - done.
 
 ## License
 

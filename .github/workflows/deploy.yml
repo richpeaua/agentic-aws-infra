@@ -18,8 +18,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Determine which dev and prod roots to deploy.
-  # push: roots changed in the push. workflow_dispatch: all roots (initial/full deploy).
+  # Determine which dev and prod roots have REAL changes to deploy.
+  # Candidates come from the push diff (or all roots on manual dispatch); each is
+  # then planned with -detailed-exitcode, and only roots with an actual diff are
+  # deployed. This keeps comment-only or no-op changes from triggering an apply
+  # or the production gate.
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -31,16 +34,39 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.READ_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+          terraform_wrapper: false
       - id: split
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            all="$(scripts/stack-roots.sh)"
+            candidates="$(scripts/stack-roots.sh)"
           else
-            all="$(scripts/stack-roots.sh "${{ github.event.before }}")"
+            candidates="$(scripts/stack-roots.sh "${{ github.event.before }}")"
           fi
-          echo "all roots: $all"
-          dev="$(echo "$all" | jq -c '[.[] | select(endswith("/dev"))]')"
-          prod="$(echo "$all" | jq -c '[.[] | select(endswith("/prod"))]')"
+          echo "candidate roots: $candidates"
+          changed='[]'
+          for root in $(echo "$candidates" | jq -r '.[]'); do
+            terraform -chdir="$root" init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}" >/dev/null
+            set +e
+            terraform -chdir="$root" plan -input=false -lock=false -detailed-exitcode >/dev/null 2>&1
+            code=$?
+            set -e
+            case "$code" in
+              0) echo "no changes: $root" ;;
+              2) echo "changes: $root"; changed="$(echo "$changed" | jq -c --arg r "$root" '. + [$r]')" ;;
+              *) echo "plan failed for $root (exit $code)"; exit 1 ;;
+            esac
+          done
+          dev="$(echo "$changed" | jq -c '[.[] | select(endswith("/dev"))]')"
+          prod="$(echo "$changed" | jq -c '[.[] | select(endswith("/prod"))]')"
+          echo "deploying dev=$dev prod=$prod"
           echo "dev=$dev" >> "$GITHUB_OUTPUT"
           echo "prod=$prod" >> "$GITHUB_OUTPUT"
           [ "$dev" = "[]" ] && echo "any_dev=false" >> "$GITHUB_OUTPUT" || echo "any_dev=true" >> "$GITHUB_OUTPUT"
