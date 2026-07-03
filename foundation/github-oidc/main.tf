@@ -61,10 +61,16 @@ data "aws_iam_policy_document" "read_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # Read-only role is assumable from PR jobs and from main-branch contexts
+    # (deploy's change-detection and scheduled drift both run on push/schedule
+    # to main, not pull_request). Fork PRs still cannot assume it (no OIDC).
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["${local.repo_sub_prefix}:pull_request"]
+      values = [
+        "${local.repo_sub_prefix}:pull_request",
+        "${local.repo_sub_prefix}:ref:refs/heads/main",
+      ]
     }
   }
 }
