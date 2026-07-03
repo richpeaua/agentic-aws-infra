@@ -1,0 +1,17 @@
+# Checkov configuration for the PR security gate.
+# Runs against the Terraform plan JSON so it sees what will actually deploy.
+# Overall soft-fail, but hard-fail on HIGH and CRITICAL severity findings, so
+# medium/low are reported as advisory while high/critical block the PR.
+framework:
+  - terraform
+  - terraform_plan
+compact: true
+quiet: true
+soft-fail: true
+hard-fail-on:
+  - HIGH
+  - CRITICAL
+# Accepted exceptions. Prefer granular inline waivers in the Terraform itself:
+#   #checkov:skip=CKV_AWS_18:Reason this is acceptable here
+# Global skips (apply everywhere) go here, each with a justification comment.
+skip-check: []

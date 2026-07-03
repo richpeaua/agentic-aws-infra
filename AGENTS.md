@@ -68,6 +68,8 @@ Prefer the scripts in `scripts/` over ad hoc commands, so every run and CI do th
 - `scripts/new-stack.sh <name>` - scaffold a module + dev/prod roots from the template.
 - `scripts/check.sh <root>` - fmt, validate, tflint, and the scanners CI runs.
 - `scripts/plan.sh <root>` - init against remote state, plan, and estimate cost.
+- `scripts/lock.sh <root>` - record provider hashes for linux (CI) and macOS (local).
+- `scripts/stack-roots.sh [base-ref]` - list stack roots (all, or those changed vs a base ref) as JSON for the CI matrix.
 - `scripts/scan-secrets.sh` - fail if forbidden identifiers are staged or tracked.
 
 Authenticate first: `aws sso login --profile aws-infra` then `export AWS_PROFILE=aws-infra`.
