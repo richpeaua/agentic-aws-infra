@@ -114,7 +114,7 @@ A change is done when every box in the pull request template checklist is satisf
 - `scripts/` - the command surface shared by local work and CI.
 - `templates/stack/` - the canonical stack template used by the scaffolder.
 - `.claude/skills/provision-aws/SKILL.md` - the provisioning procedure.
-- `.claude/agents/` - the review-panel subagents (added in Phase 5).
+- `.claude/agents/` - the review-panel subagents (security, compliance, cost, correctness reviewers).
 - `foundation/` - state backend and GitHub OIDC roles (laptop-applied).
 - `modules/` - reusable modules. `stacks/<name>/{dev,prod}/` - per-environment roots.
 - `policy/` - Conftest/OPA compliance policies and Checkov config (added in Phase 4).
