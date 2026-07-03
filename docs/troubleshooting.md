@@ -56,6 +56,10 @@ The S3 native lockfile (`use_lockfile = true`) writes a `.tflock` object to acqu
 By design: GitHub does not give secrets or OIDC to fork-triggered workflows.
 Run the static checks (fmt, validate, tflint, Checkov on HCL) on fork PRs and skip the AWS-dependent steps.
 
+### Smoke test / `$(terraform output -raw ...)` returns garbage in CI
+
+`hashicorp/setup-terraform` installs a wrapper that adds annotations to stdout, which corrupts command-substitution capture like `$(terraform output -raw x)`. Set `terraform_wrapper: false` on the setup-terraform step in any job that captures Terraform stdout.
+
 ## Shell
 
 ### A heredoc or inline script errors under zsh

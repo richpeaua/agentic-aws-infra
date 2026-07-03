@@ -65,6 +65,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ vars.TF_VERSION }}
+          terraform_wrapper: false
       - name: apply
         run: |
           terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
@@ -91,6 +92,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ vars.TF_VERSION }}
+          terraform_wrapper: false
       - name: apply
         run: |
           terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
