@@ -112,3 +112,22 @@ jobs:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
       - name: infracost scan
         run: infracost scan ${{ matrix.root }} --llm || true
+
+  # Single required status check. Always runs; fails only if a real job failed,
+  # so branch protection can require just this one even when others skip.
+  gate:
+    needs: [policy-tests, static, plan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        run: |
+          results='${{ needs.policy-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }}'
+          echo "job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "A required job did not pass."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed or were skipped."
