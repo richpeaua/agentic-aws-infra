@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+
+# Must be globally unique across all of AWS S3. Suggestion: include your
+# account id or a random suffix, e.g. "myinitials-tfstate-1a2b3c".
+state_bucket_name = "REPLACE_ME-tfstate"
+
+# Where budget alerts are sent.
+budget_alert_email = "you@example.com"
+
+# Monthly USD spend before alerts fire. Adjust to taste.
+budget_limit_usd = "50"
+
+# Optional overrides:
+# project     = "aws-agentic-infra"
+# environment = "shared"
+# region      = "us-east-1"

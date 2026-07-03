@@ -1,0 +1,24 @@
+# Terraform
+# NOTE: .terraform.lock.hcl is intentionally committed for reproducible provider versions.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Plans and variable files may contain secrets
+tfplan
+*.tfplan
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Backend config holds the state bucket name (contains the account ID). Not the .example.
+*.tfbackend
+
+# Infracost
+.infracost/
+infracost.json

@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+
+# Must be globally unique across all of AWS S3.
+site_bucket_name = "REPLACE_ME-static-site"
+
+# Optional overrides:
+# project     = "aws-agentic-infra"
+# environment = "dev"
+# region      = "us-east-1"
