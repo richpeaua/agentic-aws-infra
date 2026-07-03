@@ -1,0 +1,99 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "stacks/**"
+      - "modules/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Serialize deploys; never cancel an in-progress apply.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  # Determine which dev and prod roots to deploy.
+  # push: roots changed in the push. workflow_dispatch: all roots (initial/full deploy).
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      dev: ${{ steps.split.outputs.dev }}
+      prod: ${{ steps.split.outputs.prod }}
+      any_dev: ${{ steps.split.outputs.any_dev }}
+      any_prod: ${{ steps.split.outputs.any_prod }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: split
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            all="$(scripts/stack-roots.sh)"
+          else
+            all="$(scripts/stack-roots.sh "${{ github.event.before }}")"
+          fi
+          echo "all roots: $all"
+          dev="$(echo "$all" | jq -c '[.[] | select(endswith("/dev"))]')"
+          prod="$(echo "$all" | jq -c '[.[] | select(endswith("/prod"))]')"
+          echo "dev=$dev" >> "$GITHUB_OUTPUT"
+          echo "prod=$prod" >> "$GITHUB_OUTPUT"
+          [ "$dev" = "[]" ] && echo "any_dev=false" >> "$GITHUB_OUTPUT" || echo "any_dev=true" >> "$GITHUB_OUTPUT"
+          [ "$prod" = "[]" ] && echo "any_prod=false" >> "$GITHUB_OUTPUT" || echo "any_prod=true" >> "$GITHUB_OUTPUT"
+
+  # Apply dev (light gate) then smoke test.
+  apply-dev:
+    needs: discover
+    if: needs.discover.outputs.any_dev == 'true'
+    runs-on: ubuntu-latest
+    environment: dev
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJson(needs.discover.outputs.dev) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+      - name: apply
+        run: |
+          terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
+          terraform -chdir=${{ matrix.root }} apply -input=false -auto-approve
+      - name: smoke test
+        run: scripts/smoke.sh ${{ matrix.root }}
+
+  # Apply prod, gated by the production environment (required reviewer), then smoke test.
+  apply-prod:
+    needs: [discover, apply-dev]
+    if: needs.discover.outputs.any_prod == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJson(needs.discover.outputs.prod) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PROD_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TF_VERSION }}
+      - name: apply
+        run: |
+          terraform -chdir=${{ matrix.root }} init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
+          terraform -chdir=${{ matrix.root }} apply -input=false -auto-approve
+      - name: smoke test
+        run: scripts/smoke.sh ${{ matrix.root }}
