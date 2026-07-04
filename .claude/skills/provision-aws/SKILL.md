@@ -39,17 +39,57 @@ Do not apply. Do not merge on the user's behalf unless asked.
 
 ## Review panel
 
-Before opening the PR, run the review panel so problems are caught and fixed early (shift-left). Dispatch these four read-only subagents (defined in `.claude/agents/`) in parallel against the draft, telling each which root(s) changed:
+Before opening the PR, run the review panel so problems are caught and fixed early (shift-left).
+The reviewers are **reasoning-only**: the orchestrator computes the deterministic tool output **once**, and each reviewer reasons over the artifacts it is handed instead of re-gathering context and re-running tools. This is what keeps a panel run from costing 4x the tokens and tool-uses (one author's context, not four).
 
-- `security-reviewer` - insecure configuration and risky patterns (mirrors Checkov).
-- `compliance-reviewer` - tags, naming, regions, public-bucket intent, structure (mirrors Conftest).
-- `cost-reviewer` - monthly cost, waste, cheaper alternatives (mirrors Infracost).
-- `correctness-reviewer` - Terraform quality, idempotency, state design, architecture (mirrors tflint plus judgment).
+### Step 1 - compute the shared artifacts once
 
-Each returns findings with severities and a one-line verdict. Then:
+You have already run `scripts/check.sh` and `scripts/plan.sh` on each changed root (loop step 4). Capture their output once, into files under the scratchpad, so it can be pasted into reviewer prompts:
+
+- The **change diff**: `git diff main...HEAD` (or the staged/working diff before the branch exists).
+- The **`terraform plan` JSON** per changed root: `terraform -chdir=<root> show -json tfplan` (from the plan you already ran). This is the primary evidence for replacements and idempotency.
+- **Checkov** output for each changed root: `checkov -d <root> --config-file policy/checkov/.checkov.yaml`.
+- **Conftest** output: `conftest test <plan.json> --policy policy/conftest`.
+- **Infracost** output: `infracost scan <root> --llm` (the monthly estimate and breakdown).
+- **tflint** output for each changed root.
+
+`scripts/check.sh` and `scripts/plan.sh` already invoke these tools; the only new work is teeing their output to files. Do not make the reviewers run any of them again.
+
+### Step 2 - gate by risk
+
+Assess the change against the risk heuristic below, then dispatch the matching review.
+
+**Low-risk (single light pass).** Run one review pass (inline, or a single general reviewer) covering all four dimensions briefly, when the change is confined to:
+
+- tag value tweaks, `description`/comment changes, or variable-default changes with no new resources;
+- output-only or docs-only changes;
+- a plan that shows **no** create/replace/destroy of a resource (only in-place updates to non-security, non-cost attributes).
+
+**Substantial (full four-agent panel).** Run the full panel whenever the change does any of:
+
+- creates, changes, or removes **IAM** (roles, policies, trust, principals) or any resource that grants access;
+- touches **networking** (VPC, subnets, security groups, routes, public IPs) or **public exposure** (S3 public access, `0.0.0.0/0`, ACLs/policies);
+- adds or changes a **data store** (S3, RDS, DynamoDB, EFS, secrets) or encryption settings;
+- shows any **`must be replaced`** or **destroy** in the plan;
+- introduces a **new resource type** or a new stack.
+
+When in doubt, run the full panel. Never let risk-gating drop **security** review on a change that touches IAM, networking, or public access.
+
+### Step 3 - dispatch the panel
+
+For a substantial change, dispatch these four read-only subagents (defined in `.claude/agents/`) in parallel. In each prompt, name the changed root(s) and paste the relevant precomputed artifacts:
+
+- `security-reviewer` - insecure configuration and risky patterns (mirrors Checkov). Give it: the diff + plan JSON + Checkov output.
+- `compliance-reviewer` - tags, naming, regions, public-bucket intent, structure (mirrors Conftest). Give it: the diff + plan JSON + Conftest output.
+- `cost-reviewer` - monthly cost, waste, cheaper alternatives (mirrors Infracost). Give it: the diff + Infracost output.
+- `correctness-reviewer` - Terraform quality, idempotency, state design, architecture (mirrors tflint plus judgment). Give it: the diff + plan JSON + tflint output.
+
+Pass enough context that a reviewer never needs to re-run a tool. Under-passing pushes it to ask for reads and erodes the savings. The reviewers still return the structured findings + one-line verdict format.
+
+### Step 4 - resolve
 
 1. Fix every `blocker` and `high` finding; address or consciously accept `medium`/`low`/`nit`.
-2. Re-plan and confirm the plan still shows only intended changes.
+2. Re-plan and confirm the plan still shows only intended changes. (If a fix materially changes risk, re-run the relevant artifact and reviewer.)
 3. Summarize each reviewer's outcome in the PR body's "Review panel findings" section.
 
 If a reviewer cannot run (for example no subagent runtime), perform that review inline against the same rubric in its agent file. Do not skip a dimension.
