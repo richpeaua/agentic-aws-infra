@@ -86,6 +86,13 @@ if [ -f "$ROOT_ABS/backend.tfbackend" ]; then
      && terraform -chdir="$ROOT_ABS" plan -out=tfplan -input=false -lock=false >"$ART/plan.txt" 2>&1; then
     ok "artifact: plan"
     terraform -chdir="$ROOT_ABS" show -json tfplan >"$ART/plan.json" 2>/dev/null || true
+    # The plan JSON is the reviewers' primary evidence for replacements/idempotency;
+    # expose it as an artifact (a .txt-suffixed copy the context builder can pick up).
+    if [ -s "$ART/plan.json" ]; then
+      cp "$ART/plan.json" "$ART/plan-json.txt"
+    else
+      printf '(plan JSON unavailable)\n' >"$ART/plan-json.txt"
+    fi
     if has conftest && [ -d "$REPO_ROOT/policy/conftest" ] && [ -s "$ART/plan.json" ]; then
       capture conftest conftest test "$ART/plan.json" --policy "$REPO_ROOT/policy/conftest"
     else
@@ -94,11 +101,13 @@ if [ -f "$ROOT_ABS/backend.tfbackend" ]; then
   else
     warn "plan unavailable (no credentials or init/plan failed); reviewers proceed on the diff and static scans"
     printf '(terraform plan unavailable in this environment)\n' >"$ART/plan.txt"
+    printf '(plan JSON unavailable)\n' >"$ART/plan-json.txt"
     printf '(plan JSON unavailable)\n' >"$ART/conftest.txt"
   fi
 else
   warn "no backend.tfbackend in $ROOT; skipping plan/conftest artifacts"
   printf '(no backend configured; plan not run)\n' >"$ART/plan.txt"
+  printf '(plan JSON unavailable)\n' >"$ART/plan-json.txt"
   printf '(plan JSON unavailable)\n' >"$ART/conftest.txt"
 fi
 
@@ -112,10 +121,10 @@ fi
 # Which artifacts each reviewer is handed (mirrors DESIGN.md).
 artifacts_for() {
   case "$1" in
-    security-reviewer)    echo "diff plan checkov" ;;
-    compliance-reviewer)  echo "diff plan conftest" ;;
+    security-reviewer)    echo "diff plan plan-json checkov" ;;
+    compliance-reviewer)  echo "diff plan plan-json conftest" ;;
     cost-reviewer)        echo "diff infracost" ;;
-    correctness-reviewer) echo "diff plan tflint" ;;
+    correctness-reviewer) echo "diff plan plan-json tflint" ;;
   esac
 }
 
@@ -124,6 +133,9 @@ REVIEWERS="security-reviewer compliance-reviewer cost-reviewer correctness-revie
 # Build each reviewer's context file and launch it as an independent agent, in parallel,
 # assigning providers round-robin to spread load.
 i=0
+idx=0
+names=()
+pids=()
 for r in $REVIEWERS; do
   prov="${PROVIDERS[$((i % ${#PROVIDERS[@]}))]}"
   echo "$prov" >"$ART/$r.provider"
@@ -143,15 +155,28 @@ for r in $REVIEWERS; do
   log "dispatch: $r -> $prov"
   # shellcheck disable=SC2086
   "$REPO_ROOT/scripts/agent.sh" $agent_args <"$ART/$r.ctx" >"$ART/$r.out" 2>"$ART/$r.err" &
+  pids[$idx]="$!"
+  names[$idx]="$r"
+  idx=$((idx + 1))
   i=$((i + 1))
 done
 
-wait
+# Wait on each agent individually and record its exit code. A bare `wait` ignores
+# child exit status, so a crashed or hung agent would otherwise pass silently.
+k=0
+while [ "$k" -lt "$idx" ]; do
+  r="${names[$k]}"
+  if wait "${pids[$k]}"; then rc=0; else rc=$?; fi
+  echo "$rc" >"$ART/$r.rc"
+  k=$((k + 1))
+done
 
 # Pull the reviewer's verdict line, tolerant of markdown emphasis (e.g. **VERDICT: PASS**)
 # and leading prose. Returns the cleaned text after "VERDICT:", or empty if none.
 extract_verdict() {
-  grep -aioE 'VERDICT:.*' "$1" 2>/dev/null | tail -1 | sed -E 's/[*_`]//g; s/[[:space:]]+$//'
+  # `|| true`: a no-match grep (no verdict) must not fail under `set -e`/`pipefail` -
+  # callers detect the empty result and treat it as a panel failure themselves.
+  { grep -aioE 'VERDICT:.*' "$1" 2>/dev/null | tail -1 | sed -E 's/[*_`]//g; s/[[:space:]]+$//'; } || true
 }
 
 # Aggregate.
@@ -160,6 +185,7 @@ log "review panel results for $ROOT"
 fail=0
 for r in $REVIEWERS; do
   prov="$(cat "$ART/$r.provider")"
+  rc="$(cat "$ART/$r.rc" 2>/dev/null || echo 1)"
   echo
   printf '########## %s  (provider: %s) ##########\n' "$r" "$prov"
   if [ -s "$ART/$r.out" ]; then
@@ -168,7 +194,15 @@ for r in $REVIEWERS; do
     warn "$r produced no output; see stderr below"
     sed 's/^/    /' "$ART/$r.err" >&2 || true
   fi
-  if extract_verdict "$ART/$r.out" | grep -qi 'CHANGES NEEDED'; then
+  [ "$DRY_RUN" -eq 1 ] && continue
+  # Fail the panel on a crashed agent or a missing verdict, not only on CHANGES NEEDED:
+  # an agent that errors out must not be mistaken for a clean pass.
+  v="$(extract_verdict "$ART/$r.out")"
+  if [ "$rc" -ne 0 ]; then
+    warn "$r: agent exited non-zero (exit $rc)"; fail=1
+  elif [ -z "$v" ]; then
+    warn "$r: returned no VERDICT"; fail=1
+  elif printf '%s' "$v" | grep -qi 'CHANGES NEEDED'; then
     fail=1
   fi
 done
@@ -176,8 +210,10 @@ done
 echo
 log "verdict summary"
 for r in $REVIEWERS; do
+  rc="$(cat "$ART/$r.rc" 2>/dev/null || echo '?')"
   v="$(extract_verdict "$ART/$r.out")"
-  printf '  %-22s %s\n' "$r" "${v:-<no verdict returned>}"
+  [ -z "$v" ] && v="<no verdict> (exit $rc)"
+  printf '  %-22s %s\n' "$r" "$v"
 done
 
 if [ "$DRY_RUN" -eq 1 ]; then
