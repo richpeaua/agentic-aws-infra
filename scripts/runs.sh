@@ -90,8 +90,10 @@ cmd_show() {
   # Reviewer child runs link back via .parent; surface them for review parents.
   local kids
   kids="$(_run_metas | while IFS= read -r m; do
-    [ "$(jq -r '.parent // ""' "$m" 2>/dev/null)" = "$id" ] && jq -r '.run_id' "$m" 2>/dev/null
-  done)"
+    if [ "$(jq -r '.parent // ""' "$m" 2>/dev/null)" = "$id" ]; then
+      jq -r '.run_id' "$m" 2>/dev/null
+    fi
+  done || true)"
   if [ -n "$kids" ]; then
     echo
     log "child runs"
