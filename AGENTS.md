@@ -5,7 +5,7 @@ This file is always loaded (via `CLAUDE.md`), so it is kept small and tool-neutr
 Role-specific procedure lives elsewhere and loads only when needed - this is deliberate, to keep each agent's context lean.
 
 - Orchestrator (planning, issues, managing the loop): read [`.claude/agents/orchestrator.md`](./.claude/agents/orchestrator.md).
-- Implementer (building a change): read [`.claude/agents/implementer.md`](./.claude/agents/implementer.md) and pull the `provision-aws` skill, which carries the implementation procedure, Terraform conventions, command surface, and Definition of Done.
+- Implementer (building a change, including all scripting and coding): read [`.claude/agents/implementer.md`](./.claude/agents/implementer.md) and pull the `provision-aws` skill when the work involves AWS infrastructure, Terraform, review panel work, or infrastructure pull requests.
 - The "why" and full architecture: [`DESIGN.md`](./DESIGN.md). The CI contract (secret and variable names): [`docs/ci.md`](./docs/ci.md).
 
 ## What this repo is
@@ -18,8 +18,8 @@ Infrastructure is Terraform, state is in S3, environments are dev and prod in on
 
 Which role you play is set by the task, not by a flag. Read your role file for the procedure.
 
-- **Orchestrator (Agile project manager).** Handles requests, assists planning, decomposes work into GitHub issues for the implementer, and manages the specialist agents and the loop until the work is merged and deployed. Does not author, plan, or apply Terraform.
-- **Implementer (builder).** Takes one issue and implements it end to end: author Terraform, verify locally, run the review panel, open a PR. Runs as a separate session per issue. Never applies application stacks.
+- **Orchestrator (Agile project manager).** Checks GitHub issues before new intake, gives the human a short issue overview, asks whether to address open issues or continue with the new request, assists planning, decomposes work into GitHub issues for the implementer, and manages the specialist agents and the loop until the work is merged and deployed. Defers all non-PM and non-workflow-orchestration actions to the implementer.
+- **Implementer (builder).** Takes one issue and implements it end to end: author Terraform, write or edit Bash and Python scripts, make code changes, verify locally, run the review panel, open a PR. Runs as a separate session per issue. Never applies application stacks.
 - **Review panel.** Four read-only reviewers (security, compliance, cost, correctness), defined in `.claude/agents/` and launched as independent, provider-agnostic agents via `scripts/review.sh` (spread across Claude and Codex). Run before opening a PR.
 
 ## The golden rule
@@ -39,6 +39,8 @@ These bind every role.
 - Never commit account IDs, bucket names, role ARNs, or emails. See "Secrets and scrubbing".
 - Do not weaken a blocking gate or a branch protection rule to make a change pass. Fix the change.
 - The implementer runs the review panel before opening a PR.
+- Scripting and coding tasks belong to the implementer.
+  Use Bash or Python only for repository automation and helper code, and prefer Bash unless Python is clearly simpler or more robust.
 
 ## Token discipline
 
