@@ -21,8 +21,7 @@ jobs:
   # Determine which dev and prod roots have REAL changes to deploy.
   # Candidates come from the push diff (or all roots on manual dispatch); each is
   # then planned with -detailed-exitcode, and only roots with an actual diff are
-  # deployed. This keeps comment-only or no-op changes from triggering an apply
-  # or the production gate.
+  # deployed. This keeps comment-only or no-op changes from triggering an apply.
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -99,7 +98,15 @@ jobs:
       - name: smoke test
         run: scripts/smoke.sh ${{ matrix.root }}
 
-  # Apply prod, gated by the production environment (required reviewer), then smoke test.
+  # Apply prod, then smoke test.
+  # The gate between dev and prod is automated, not a human click: `needs: apply-dev`
+  # means a failed dev apply OR a failed dev smoke test (both are steps in apply-dev)
+  # skips this job, so prod never applies on a broken dev. GitHub implicitly requires
+  # the needs to have succeeded (the `if` has no status function), which is the guard.
+  # A prod-only change (no dev diff) still runs: apply-dev is then skipped, not failed.
+  # The `production` environment is retained to scope PROD_APPLY_ROLE_ARN and the
+  # main-only branch policy; its human required-reviewer has been removed so merge is
+  # the single deploy approval.
   apply-prod:
     needs: [discover, apply-dev]
     if: needs.discover.outputs.any_prod == 'true'

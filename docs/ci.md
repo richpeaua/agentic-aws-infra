@@ -7,7 +7,22 @@ Workflows must reference these exact names.
 ## Environments
 
 - `dev`: light gate, no required reviewer. Deployments restricted to protected branches (`main`).
-- `production`: requires a reviewer (the repo owner) before the apply job proceeds. Deployments restricted to protected branches (`main`).
+- `production`: no required reviewer. Deployments restricted to protected branches (`main`). The environment is retained to scope `PROD_APPLY_ROLE_ARN` and enforce the `main`-only branch policy, not to gate on a human click.
+
+The gate between dev and prod is automated, not a human approval: in `deploy.yml` the `apply-prod` job `needs: [discover, apply-dev]`, so a failed dev apply or a failed dev smoke test (a step within `apply-dev`) blocks the prod apply. The single human approval per change is the PR merge.
+
+### Owner action: remove the `production` required reviewer
+
+The single-gate model requires removing the required reviewer from the `production` environment while keeping its `main`-only branch policy. This is an owner-authenticated action (not something CI or an agent does):
+
+```
+gh api --method PUT repos/richpeaua/agentic-aws-infra/environments/production \
+  -f "reviewers=[]" \
+  -F "deployment_branch_policy[protected_branches]=true" \
+  -F "deployment_branch_policy[custom_branch_policies]=false"
+```
+
+This clears the required-reviewer protection rule and leaves the branch policy intact (deployments stay restricted to `main`). To restore a manual prod pause later, re-add a required reviewer to the `production` environment (via the same API or the GitHub UI).
 
 ## Repository variables (non-secret)
 

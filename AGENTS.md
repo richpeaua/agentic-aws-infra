@@ -21,6 +21,8 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 
 ## The change workflow
 
+Run steps 2-6 autonomously, without pausing for intermediate "may I proceed?" approvals. There are exactly two human touchpoints per change: the request (planning) and PR review/merge. Stop only for a genuine planning ambiguity or the finished PR.
+
 1. Understand the request.
 2. Scaffold or edit the stack. For a new stack run `scripts/new-stack.sh <name>`, which generates the module and dev/prod roots from the template. Existing stacks are edited in place.
 3. Author the resources in the module, following the naming and tagging conventions.
@@ -28,8 +30,8 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 5. Run the review panel (security, compliance, cost, correctness), fix its findings, and re-plan until the plan shows only intended changes and a re-plan is a no-op.
 6. Run `scripts/scan-secrets.sh`, then create a branch, push, and open a pull request with `gh`. Do not apply.
 7. CI runs the gates on the PR (plan, tflint, Checkov, Conftest, Infracost).
-8. A human reviews and merges the PR (code approval).
-9. CI applies to dev and runs smoke tests, then pauses at the `production` environment gate for deploy approval, then applies to prod.
+8. A human reviews and merges the PR. Merge is the single deploy approval.
+9. CI applies to dev and runs smoke tests; if dev apply and smoke pass, it automatically applies to prod and runs prod smoke tests. The inter-environment gate is automated (a failed dev apply or dev smoke blocks prod); there is no second human approval before prod.
 
 Principle: the local checks and the CI gates run the same tools with the same configs (via `scripts/`), so a change that passes locally passes in CI.
 

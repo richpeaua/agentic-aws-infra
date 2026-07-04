@@ -13,8 +13,8 @@ The agent's operating procedure lives in [`.claude/skills/provision-aws/SKILL.md
 2. The agent authors Terraform on a branch: a reusable module plus thin per-environment roots.
 3. The agent runs a local review panel of specialized subagents (security, compliance, cost, correctness), fixes their findings, and opens a pull request.
 4. CI runs the gate stack on the PR (plan, tflint, Checkov, Conftest/OPA, Infracost) and posts the results.
-5. You review and merge the PR. That is code approval.
-6. CI applies to dev and runs smoke tests, then waits at a GitHub Environment gate for your deploy approval before applying to prod.
+5. You review and merge the PR. Merge is the single approval - both code and deploy approval.
+6. CI applies to dev and runs smoke tests, then, if dev apply and smoke pass, applies to prod automatically and runs prod smoke tests. The gate between dev and prod is automated, not a second human click.
 
 The privileged `terraform apply` runs only in CI, never on a laptop, for application stacks.
 If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
