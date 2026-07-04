@@ -89,15 +89,15 @@ telemetry_finalize_run "$cdir" success 0 "" "" ""
 runs() { bash "$REPO/scripts/runs.sh" "$@"; }
 
 check "list hides review children by default" \
-  '! runs list | grep -q security-reviewer'
+  'out="$(runs list)"; ! printf "%s" "$out" | grep -q security-reviewer'
 check "list --children shows reviewer child" \
-  'runs list --children | grep -q security-reviewer'
+  'out="$(runs list --children)"; printf "%s" "$out" | grep -q security-reviewer'
 check "list --json is valid json array" \
   'runs list --json | jq -e "type == \"array\"" >/dev/null'
 check "show prints metadata + artifact paths" \
-  'runs show "$rid" | grep -q metadata.json'
+  'out="$(runs show "$rid")"; printf "%s" "$out" | grep -q metadata.json'
 check "show lists child runs for a review parent" \
-  'runs show "$pid" | grep -q security-reviewer'
+  'out="$(runs show "$pid")"; printf "%s" "$out" | grep -q security-reviewer'
 
 # clean: age one run into the past, keep a fresh one.
 echo "== runs.sh clean =="

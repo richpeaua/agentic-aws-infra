@@ -165,5 +165,5 @@ telemetry_scrub() {
     -e 's/tfstate-[0-9]{12}/tfstate-<redacted>/g' \
     -e 's/arn:aws:[a-z0-9-]*:[a-z0-9-]*:[0-9]{12}:[^ ]*/<redacted-arn>/g' \
     -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<redacted-email>/g' \
-    -e 's/\b[0-9]{12}\b/<redacted-id>/g'
+    -e 's/(^|[^0-9])([0-9]{12})([^0-9]|$)/\1<redacted-id>\3/g'
 }
