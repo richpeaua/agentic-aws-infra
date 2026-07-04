@@ -23,6 +23,8 @@ Read `docs/status.md` to orient on the current state.
 
 ## The loop
 
+Run the loop autonomously: scaffold, author, check, plan, review panel, and open the PR without pausing for "may I proceed?" checkpoints between steps. There are exactly two human touchpoints per change: the request (planning) and PR review/merge. The only agent-initiated stops are a genuine planning ambiguity (step 1) and the finished PR (step 6). After merge, CI deploys dev then prod with no further human click, so the PR is the deploy approval - open it in that finished, mergeable state.
+
 1. Understand the request. Ask clarifying questions only if genuinely blocked.
 2. Scaffold or edit the stack:
    - New stack: `scripts/new-stack.sh <name>` generates the module and dev/prod roots from the template.
@@ -33,7 +35,7 @@ Read `docs/status.md` to orient on the current state.
    - `scripts/plan.sh stacks/<name>/dev` (init, plan, Infracost). Repeat for `prod`.
 5. Run the review panel (below), fix its findings, and re-plan until the plan shows only intended changes and a re-plan is a no-op.
 6. `scripts/scan-secrets.sh`, then create a `<type>/<scope>` branch, commit, push, and open a PR with `gh`. Fill in the PR template completely (plan summary, cost, panel findings, Definition of Done).
-7. Hand off: CI runs the gates; the human reviews and merges; CI applies dev then, after the production gate, prod.
+7. Hand off: CI runs the gates; the human reviews and merges. On merge, CI applies dev, runs dev smoke tests, and - if dev apply and smoke pass - automatically applies prod and runs prod smoke tests. There is no second human gate before prod; the merge is the deploy approval.
 
 Do not apply. Do not merge on the user's behalf unless asked.
 
