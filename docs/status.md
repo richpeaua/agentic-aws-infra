@@ -25,6 +25,7 @@ Detailed phase specs are the GitHub issues (epic: #8).
 ## Tooling in the repo
 
 - `scripts/` - the command surface: `preflight`, `new-stack`, `check`, `plan`, `scan-secrets`, plus `agent.sh`, `implement.sh`, and `review.sh` (agent launchers). Local and CI call these.
+- `scripts/lib/telemetry.sh` + `scripts/runs.sh` - headless run observability: durable local records under `.agents/runs/` (git-ignored), scrubbed issue/PR comments, best-effort token usage, and a `list`/`show`/`clean` viewer. See `docs/observability.md`.
 - `templates/stack/` - canonical stack template used by `scripts/new-stack.sh`.
 
 ## Agent architecture

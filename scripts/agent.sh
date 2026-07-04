@@ -28,7 +28,11 @@
 # and is constrained here, not left to the child agent's settings.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/scripts/lib/telemetry.sh"
 
+# Optional telemetry hook (off by default, so agent.sh stays usable standalone):
+# when a caller exports AGENT_USAGE_FILE, best-effort provider token usage is parsed
+# from structured output and written there as normalized JSON. stdout is unchanged.
 NAME="${1:?usage: scripts/agent.sh <agent-name> [--provider claude|codex] [--model M] [--writable]}"
 shift || true
 
@@ -97,6 +101,22 @@ run_claude() {
     printf 'CMD: %s\n' "$*"
     return 0
   fi
+  if [ -n "${AGENT_USAGE_FILE:-}" ]; then
+    # Structured output lets us record token usage. `.result` is the same final
+    # message text a plain run prints, so downstream stdout parsing is unchanged.
+    local raw rc=0
+    raw="$(mktemp)"
+    printf '%s' "$CONTEXT" | "$@" --output-format json >"$raw" || rc=$?
+    if [ "$rc" -eq 0 ] && jq -e . >/dev/null 2>&1 <"$raw"; then
+      jq -r '.result // ""' "$raw"
+      telemetry_usage_from_claude_json "$raw" >"$AGENT_USAGE_FILE" 2>/dev/null || true
+    else
+      cat "$raw"
+      telemetry_usage_unavailable >"$AGENT_USAGE_FILE" 2>/dev/null || true
+    fi
+    rm -f "$raw"
+    return "$rc"
+  fi
   printf '%s' "$CONTEXT" | "$@"
 }
 
@@ -122,7 +142,16 @@ $CONTEXT"
     return 0
   fi
   # Codex streams events to stdout; send those to stderr and emit only the final message.
-  printf '%s' "$prompt" | "$@" 1>&2
+  if [ -n "${AGENT_USAGE_FILE:-}" ]; then
+    # Tee the event stream so we can best-effort parse a token count from it.
+    # pipefail preserves codex's exit status (a failed run still aborts here).
+    local stream; stream="$(mktemp)"
+    printf '%s' "$prompt" | "$@" 2>&1 | tee "$stream" >&2
+    telemetry_usage_from_codex "$stream" >"$AGENT_USAGE_FILE" 2>/dev/null || true
+    rm -f "$stream"
+  else
+    printf '%s' "$prompt" | "$@" 1>&2
+  fi
   cat "$last"
   rm -f "$last"
 }

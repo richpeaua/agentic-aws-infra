@@ -6,6 +6,7 @@
 # scripts/agent.sh with the constrained writable tool surface.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/scripts/lib/telemetry.sh"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -78,6 +79,37 @@ comment_block() {
   '
 }
 
+NUM="$(printf '%s' "$ISSUE_JSON" | jq -r '.number')"
+
+# Bounded, scrubbed GitHub comments. Never post prompts, stdout/stderr, plans, or identifiers.
+post_start_comment() {
+  local body
+  body="$(printf '🤖 **Implementer run started**\n\n- run: `%s`\n- provider/model: `%s` / `%s`\n- started: %s UTC\n\n_Local run record only; detailed artifacts are git-ignored and are never posted here._' \
+    "$RUN_ID" "$PROVIDER" "${MODEL:-default}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | telemetry_scrub)"
+  gh issue comment "$ISSUE" --body "$body" >/dev/null
+}
+
+post_done_comment() {
+  local status="$1" rc="$2" branch="$3" pr_url="$4" usage dur body
+  usage="$(jq -r '.token_usage | if .source=="unavailable" then "unavailable" else "in \(.input // "?") / out \(.output // "?") / total \(.total // "?") (\(.source))" end' "$RUN_DIR/metadata.json" 2>/dev/null || echo unavailable)"
+  dur="$(jq -r '.duration_seconds // "?"' "$RUN_DIR/metadata.json" 2>/dev/null || echo '?')"
+  body="$(printf '🤖 **Implementer run %s**\n\n- run: `%s`\n- exit: %s\n- duration: %ss\n- branch: `%s`\n- PR: %s\n- tokens: %s\n\n_Scrubbed summary; full stdout/stderr and plan output stay in the local git-ignored run store._' \
+    "$status" "$RUN_ID" "$rc" "$dur" "${branch:-n/a}" "${pr_url:-n/a}" "$usage" | telemetry_scrub)"
+  gh issue comment "$ISSUE" --body "$body" >/dev/null
+}
+
+# Prepare a durable run directory (even in --dry-run) and the prompt file.
+RUN_ID=""; RUN_DIR=""; USAGE_FILE=""
+if telemetry_enabled; then
+  RUN_ID="$(telemetry_new_run_id implementer)"
+  RUN_DIR="$(telemetry_run_dir "$RUN_ID")"
+  USAGE_FILE="$RUN_DIR/usage.json"
+  tel telemetry_init_run "$RUN_DIR" implementer implementer "$PROVIDER" "$MODEL" "$NUM" ""
+  PROMPT_FILE="$RUN_DIR/prompt.txt"
+else
+  PROMPT_FILE="$(mktemp)"
+fi
+
 {
   printf 'You are the implementer for this repository.\n'
   printf 'Work exactly one GitHub issue and open one pull request.\n'
@@ -101,9 +133,45 @@ comment_block() {
     printf '\n'
   fi
   printf '\n## Completion contract\n\n'
-  printf 'Create or use a purpose-named branch, make the change, run the relevant checks, run the required review panel, run scripts/scan-secrets.sh, push, and open a PR that references Closes #%s.\n' "$(printf '%s' "$ISSUE_JSON" | jq -r '.number')"
-} | {
-  args=(implementer --provider "$PROVIDER" --writable)
-  [ -n "$MODEL" ] && args+=(--model "$MODEL")
-  "$REPO_ROOT/scripts/agent.sh" "${args[@]}"
-}
+  printf 'Create or use a purpose-named branch, make the change, run the relevant checks, run the required review panel, run scripts/scan-secrets.sh, push, and open a PR that references Closes #%s.\n' "$NUM"
+} > "$PROMPT_FILE"
+
+# Post the start comment for issue-linked runs (skip in dry-run: nothing ran).
+if telemetry_enabled && [ "$DRY_RUN" -ne 1 ]; then
+  tel post_start_comment
+fi
+
+args=(implementer --provider "$PROVIDER" --writable)
+[ -n "$MODEL" ] && args+=(--model "$MODEL")
+
+# Dispatch. A non-zero agent exit must still be recorded, so capture rc rather
+# than let set -e abort before finalize runs.
+rc=0
+if telemetry_enabled; then
+  export AGENT_USAGE_FILE="$USAGE_FILE"
+  set +e
+  "$REPO_ROOT/scripts/agent.sh" "${args[@]}" < "$PROMPT_FILE" \
+    > >(tee "$RUN_DIR/stdout.txt") \
+    2> >(tee "$RUN_DIR/stderr.txt" >&2)
+  rc=$?
+  set -e
+  unset AGENT_USAGE_FILE
+
+  status="success"; [ "$rc" -eq 0 ] || status="failed"
+  branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  pr_url=""
+  [ -n "$branch" ] && pr_url="$(gh pr view "$branch" --json url -q .url 2>/dev/null || true)"
+  tel telemetry_finalize_run "$RUN_DIR" "$status" "$rc" "$branch" "$pr_url" "$USAGE_FILE"
+  if [ "$DRY_RUN" -ne 1 ]; then
+    tel post_done_comment "$status" "$rc" "$branch" "$pr_url"
+  fi
+  log "run recorded: .agents/runs/$RUN_ID (status=$status exit=$rc)"
+else
+  set +e
+  "$REPO_ROOT/scripts/agent.sh" "${args[@]}" < "$PROMPT_FILE"
+  rc=$?
+  set -e
+  rm -f "$PROMPT_FILE"
+fi
+
+exit "$rc"
