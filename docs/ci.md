@@ -16,13 +16,11 @@ The gate between dev and prod is automated, not a human approval: in `deploy.yml
 The single-gate model requires removing the required reviewer from the `production` environment while keeping its `main`-only branch policy. This is an owner-authenticated action (not something CI or an agent does):
 
 ```
-gh api --method PUT repos/richpeaua/agentic-aws-infra/environments/production \
-  -f "reviewers=[]" \
-  -F "deployment_branch_policy[protected_branches]=true" \
-  -F "deployment_branch_policy[custom_branch_policies]=false"
+printf '%s' '{"reviewers":[],"deployment_branch_policy":{"protected_branches":true,"custom_branch_policies":false}}' \
+  | gh api --method PUT repos/richpeaua/agentic-aws-infra/environments/production --input -
 ```
 
-This clears the required-reviewer protection rule and leaves the branch policy intact (deployments stay restricted to `main`). To restore a manual prod pause later, re-add a required reviewer to the `production` environment (via the same API or the GitHub UI).
+This clears the required-reviewer protection rule and leaves the branch policy intact (deployments stay restricted to `main`). To restore a manual prod pause later, re-add a required reviewer to the `production` environment (via the API or the GitHub UI).
 
 ## Repository variables (non-secret)
 

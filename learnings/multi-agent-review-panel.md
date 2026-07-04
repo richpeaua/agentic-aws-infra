@@ -10,8 +10,8 @@ This post is about a shift-left multi-agent review panel for infrastructure code
 ## The setup
 
 The workflow is a GitOps pipeline for AWS infrastructure.
-An agent authors Terraform, opens a pull request, and CI runs a stack of gates: tflint, Checkov for security, Conftest/OPA for our own compliance policies, and Infracost for cost.
-A human merges, and CI applies through an environment gate.
+An implementer agent authors Terraform, opens a pull request, and CI runs a stack of gates: tflint, Checkov for security, Conftest/OPA for our own compliance policies, and Infracost for cost.
+A human merges, and CI applies the change to dev then prod through the pipeline.
 That is already a lot of automated checking.
 
 So why add agents that review the same code?
@@ -49,7 +49,7 @@ That means the reviewers can run in parallel without fighting over the same file
 
 Third, every reviewer emits the same structured shape: findings with a severity, a file-and-line anchor, a concrete fix, and a one-line verdict.
 Consistency across runs is not a hope, it is a format.
-Two runs of the same review produce the same shape, so the output is scannable and the orchestrator can synthesize it mechanically.
+Two runs of the same review produce the same shape, so the output is scannable and the implementer can synthesize it mechanically.
 
 The panel runs before the PR is opened.
 Problems get caught and fixed while the change is still a draft, and CI stays a backstop rather than the first line of defense.

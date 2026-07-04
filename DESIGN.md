@@ -18,7 +18,7 @@ Prefer quality, simplicity, robustness, and long-term maintainability over speed
 ## Core execution model: GitOps
 
 The privileged action, `terraform apply`, runs in CI, never on a laptop, for all application stacks.
-The agent authors Terraform locally, reviews it with a local agent panel, and opens a pull request.
+An orchestrator agent (an Agile project manager) turns the request into issues; for each issue an implementer agent authors Terraform locally, reviews it with a local agent panel, and opens a pull request.
 Human involvement is deliberately confined to two touchpoints per change: describing the request (planning), and reviewing and merging the PR. The merge is the single approval - it is both code approval and deploy approval, because the PR already carries the plan, cost, and review-panel findings the human needs to decide. After merge, CI applies dev then prod with no further human click; the gate between them is automated (dev apply and dev smoke must pass before prod runs).
 The rule that defines the model: if a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 
@@ -27,25 +27,26 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 ## Roles
 
 - Human: describes infrastructure in natural language, then reviews and merges PRs. Merge is the single deploy approval; there is no separate environment-gate click.
-- Orchestrator agent: the `provision-aws` skill running in Claude Code. It authors the stack, runs the review panel, and opens the PR. It does not apply application stacks.
-- Review panel: four read-only Claude Code subagents (Security, Compliance, Cost, Correctness) that critique the draft before the PR.
+- Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, and manages the loop to completion. It does not author, plan, or apply Terraform.
+- Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a separate session. It does not apply application stacks.
+- Review panel: four read-only Claude Code subagents (Security, Compliance, Cost, Correctness) that the implementer spawns to critique the draft before the PR.
 - CI: GitHub Actions. It runs the gates on PRs and performs applies via short-lived OIDC credentials.
 
 ## End-to-end loop
 
-1. The human describes the desired infrastructure.
-2. The orchestrator creates or edits a stack as a module plus thin per-environment roots, on a new git branch.
-3. The orchestrator runs `terraform fmt`, `validate`, `plan`, and Infracost locally to produce a draft and a cost figure.
-4. The orchestrator fans out to the review panel in parallel. Each reviewer is read-only and reports findings.
-5. The orchestrator applies fixes for panel findings, then re-plans.
-6. The orchestrator pushes the branch and opens a PR with `gh`.
+1. The human describes the desired infrastructure to the orchestrator.
+2. The orchestrator clarifies scope, plans the work, and files one GitHub issue per independently-shippable unit. The issues are the handoff to the implementer.
+3. For each issue a separate implementer session creates or edits a stack as a module plus thin per-environment roots on a new branch, and runs `terraform fmt`, `validate`, `plan`, and Infracost locally to produce a draft and a cost figure.
+4. The implementer computes the deterministic tool output once and fans out to the review panel in parallel. Each reviewer is read-only, reasons over the provided artifacts, and reports findings.
+5. The implementer applies fixes for panel findings, then re-plans.
+6. The implementer pushes the branch and opens a PR with `gh`.
 7. CI runs the gate stack on the PR and posts plan, security, compliance, and cost results as a comment.
 8. The human reviews and merges the PR. Merge is the single approval - both code and deploy approval.
 9. CI applies the change to dev, then runs dev smoke tests.
-10. If the dev apply and dev smoke tests pass, CI applies to prod automatically - no human click. The `production` GitHub Environment still restricts the apply to the `main` branch and scopes the prod role, but has no required reviewer. A failed dev apply or dev smoke test blocks the prod apply.
-11. CI runs prod smoke tests.
+10. If the dev apply and dev smoke tests pass, CI applies to prod automatically - no human click. The `production` GitHub Environment restricts the apply to `main` and scopes the prod role, but has no required reviewer. A failed dev apply or dev smoke test blocks prod.
+11. CI runs prod smoke tests. The orchestrator tracks the issue to done and updates `docs/status.md`.
 
-The orchestrator never runs `terraform apply` or `terraform destroy` for an application stack.
+Neither the orchestrator nor the implementer runs `terraform apply` or `terraform destroy` for an application stack.
 
 ## Repository
 
@@ -113,8 +114,8 @@ Blocking gates are configured as required status checks in branch protection.
 
 ## Multi-agent review panel
 
-After the orchestrator drafts a stack, a panel of read-only reviewers critiques it before the PR.
-They mirror the CI gates so problems are caught and fixed early (shift-left), while CI remains the authoritative backstop.
+After the implementer drafts a stack, it spawns four read-only reviewer subagents in parallel.
+They mirror the CI gates so problems are caught and fixed before the PR (shift-left), while CI remains the authoritative backstop.
 
 - Security agent: reasons like Checkov plus threat modeling. Flags insecure configuration and risky patterns.
 - Compliance agent: checks against the Conftest/Rego policies and the tagging and naming standards.
@@ -122,11 +123,11 @@ They mirror the CI gates so problems are caught and fixed early (shift-left), wh
 - Correctness agent: reviews Terraform quality, state design, and architectural smells that scanners miss.
 
 The reviewers are defined in `.claude/agents/`.
-Parallelism belongs in review, not authoring: there is a single author to avoid edit conflicts.
+Parallelism belongs in review, not authoring: there is a single author (the implementer) to avoid edit conflicts.
 
 ### Precompute once, reason many
 
-The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by the orchestrator, which it has already done producing the draft.
+The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by the implementer, which it has already done producing the draft.
 Their output plus the change diff is captured and passed into each reviewer's prompt.
 The reviewers are therefore **reasoning-only** (`tools: Read, Grep, Glob`): they reason over the artifacts they are handed and use `Read`/`Grep` only for specific extra context, never re-running the tools or re-reading the whole repo.
 This is a deliberate cost design: a naive panel has each of four agents independently re-read the same files and re-run the same tools, roughly quadrupling tokens and tool-uses for identical evidence. Computing shared artifacts once and having specialists reason over them removes that redundancy without losing coverage - each reviewer is given the same information it would have gathered.
@@ -143,9 +144,8 @@ The explicit heuristic lives in the `provision-aws` skill.
 Dev and prod coexist in the one account and are separated logically.
 
 - Mechanism: directory-per-environment with a shared module. Each stack is a reusable module in `modules/<name>/`. Thin roots at `stacks/<name>/dev/` and `stacks/<name>/prod/` consume the module, each with its own backend key and `<env>.tfvars`.
-- GitHub Environments: `dev` (light or no gate) and `production` (no required reviewer; deployment-branch policy restricts it to `main`, and it scopes the prod apply role). The `production` environment is retained for that scoping and branch policy, not for a human gate.
-- Promotion: a single PR. On merge, CI applies dev and runs dev smoke tests, then automatically applies prod. The gate between environments is automated - the prod apply depends on the dev apply job, so a failed dev apply or dev smoke test blocks prod. No human approval sits between dev and prod.
-- Single human gate: this is a deliberate safety trade. The PR (with its plan, cost, and panel findings) is the informed deploy approval; there is no second pause before prod. It is reversible by re-adding a required reviewer to the `production` environment.
+- GitHub Environments: `dev` (light or no gate) and `production` (no required reviewer; a deployment-branch policy restricts it to `main`, and it scopes the prod apply role). The `production` environment is retained for that scoping and branch policy, not for a human gate.
+- Promotion: a single PR. On merge, CI applies dev and runs dev smoke tests, then automatically applies prod. The gate between environments is automated - the prod apply depends on the dev apply job, so a failed dev apply or dev smoke test blocks prod. No human approval sits between dev and prod; the PR merge is the single deploy approval, and it is reversible by re-adding a required reviewer to the `production` environment.
 
 ## QA and testing
 
@@ -181,8 +181,8 @@ This catches out-of-band changes made outside the pipeline.
     drift.yml         # scheduled drift detection
 .claude/
   settings.json       # local apply/destroy blocked for application stacks; plan/scan allowed
-  agents/             # security, compliance, cost, correctness reviewer subagents
-  skills/provision-aws/   # orchestrator loop: author -> panel -> PR (no local apply)
+  agents/             # orchestrator (PM), implementer, and the four reviewer subagents
+  skills/provision-aws/   # the implementer's playbook: author -> panel -> PR (no local apply)
 foundation/
   state-backend/      # S3 state bucket + AWS Budget (laptop-applied)
   github-oidc/        # OIDC provider + read, dev-apply, prod-apply roles (laptop-applied)
