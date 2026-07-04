@@ -113,8 +113,8 @@ Blocking gates are configured as required status checks in branch protection.
 
 ## Multi-agent review panel
 
-After the orchestrator drafts a stack, it spawns four read-only reviewer subagents in parallel.
-They mirror the CI gates so problems are caught and fixed before the PR (shift-left), while CI remains the authoritative backstop.
+After the orchestrator drafts a stack, a panel of read-only reviewers critiques it before the PR.
+They mirror the CI gates so problems are caught and fixed early (shift-left), while CI remains the authoritative backstop.
 
 - Security agent: reasons like Checkov plus threat modeling. Flags insecure configuration and risky patterns.
 - Compliance agent: checks against the Conftest/Rego policies and the tagging and naming standards.
@@ -123,6 +123,20 @@ They mirror the CI gates so problems are caught and fixed before the PR (shift-l
 
 The reviewers are defined in `.claude/agents/`.
 Parallelism belongs in review, not authoring: there is a single author to avoid edit conflicts.
+
+### Precompute once, reason many
+
+The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by the orchestrator, which it has already done producing the draft.
+Their output plus the change diff is captured and passed into each reviewer's prompt.
+The reviewers are therefore **reasoning-only** (`tools: Read, Grep, Glob`): they reason over the artifacts they are handed and use `Read`/`Grep` only for specific extra context, never re-running the tools or re-reading the whole repo.
+This is a deliberate cost design: a naive panel has each of four agents independently re-read the same files and re-run the same tools, roughly quadrupling tokens and tool-uses for identical evidence. Computing shared artifacts once and having specialists reason over them removes that redundancy without losing coverage - each reviewer is given the same information it would have gathered.
+
+### Risk-gating
+
+The panel is scaled to the change. A trivial or low-risk change (a tag tweak, a docs-only or output-only change, a plan with no create/replace/destroy) gets a single light review pass rather than the full four-agent fan-out.
+The full panel runs for substantial changes: new or changed IAM, networking, data stores, public exposure, any resource replacement or destroy, or a new resource type or stack.
+Security review is never gated away from a change that touches IAM, networking, or public access; when in doubt, the full panel runs.
+The explicit heuristic lives in the `provision-aws` skill.
 
 ## Environments
 
