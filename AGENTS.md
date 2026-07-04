@@ -1,16 +1,26 @@
 # AGENTS.md
 
-Operating rules for any agent working in this repository.
-This is the authoritative "what to do" reference and is intentionally tool-neutral.
-For the "why" and the full architecture, read [`DESIGN.md`](./DESIGN.md).
-For the CI configuration contract (secret and variable names), read [`docs/ci.md`](./docs/ci.md).
-For the provisioning procedure, read [`.claude/skills/provision-aws/SKILL.md`](./.claude/skills/provision-aws/SKILL.md).
+The universal operating rules for any agent working in this repository.
+This file is always loaded (via `CLAUDE.md`), so it is kept small and tool-neutral: only the guardrails that bind *every* role.
+Role-specific procedure lives elsewhere and loads only when needed - this is deliberate, to keep each agent's context lean.
+
+- Orchestrator (planning, issues, managing the loop): read [`.claude/agents/orchestrator.md`](./.claude/agents/orchestrator.md).
+- Implementer (building a change): read [`.claude/agents/implementer.md`](./.claude/agents/implementer.md) and pull the `provision-aws` skill, which carries the implementation procedure, Terraform conventions, command surface, and Definition of Done.
+- The "why" and full architecture: [`DESIGN.md`](./DESIGN.md). The CI contract (secret and variable names): [`docs/ci.md`](./docs/ci.md).
 
 ## What this repo is
 
 An agentic AWS infrastructure workflow.
-An agent authors Terraform, a review panel critiques it, and a GitOps pipeline applies it through automated quality, security, and compliance gates.
+An orchestrator agent turns requests into issues, an implementer authors Terraform, a review panel critiques it, and a GitOps pipeline applies it through automated quality, security, and compliance gates.
 Infrastructure is Terraform, state is in S3, environments are dev and prod in one dedicated account, and the repo is public (so nothing sensitive may be committed).
+
+## Agent roles
+
+Which role you play is set by the task, not by a flag. Read your role file for the procedure.
+
+- **Orchestrator (Agile project manager).** Handles requests, assists planning, decomposes work into GitHub issues for the implementer, and manages the loop until the work is merged and deployed. Does not author, plan, or apply Terraform.
+- **Implementer (builder).** Takes one issue and implements it end to end: author Terraform, verify locally, run the review panel, open a PR. Runs as a separate session per issue. Never applies application stacks.
+- **Review panel.** Four read-only reviewer subagents (security, compliance, cost, correctness) the implementer spawns before opening a PR. Defined in `.claude/agents/`.
 
 ## The golden rule
 
@@ -19,79 +29,30 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 - Never run `terraform apply` or `terraform destroy` for an application stack. Application applies happen only in CI.
 - The only exception: foundational stacks under `foundation/` are applied locally by a human, because they are what let CI apply anything (chicken-and-egg). An agent prepares these and hands off the apply.
 
-## The change workflow
-
-Run steps 2-6 autonomously, without pausing for intermediate "may I proceed?" approvals. There are exactly two human touchpoints per change: the request (planning) and PR review/merge. Stop only for a genuine planning ambiguity or the finished PR.
-
-1. Understand the request.
-2. Scaffold or edit the stack. For a new stack run `scripts/new-stack.sh <name>`, which generates the module and dev/prod roots from the template. Existing stacks are edited in place.
-3. Author the resources in the module, following the naming and tagging conventions.
-4. Verify locally with the same tools CI uses: `scripts/check.sh <root>` then `scripts/plan.sh <root>`. Local green must predict CI green.
-5. Run the review panel (security, compliance, cost, correctness), fix its findings, and re-plan until the plan shows only intended changes and a re-plan is a no-op.
-6. Run `scripts/scan-secrets.sh`, then create a branch, push, and open a pull request with `gh`. Do not apply.
-7. CI runs the gates on the PR (plan, tflint, Checkov, Conftest, Infracost).
-8. A human reviews and merges the PR. Merge is the single deploy approval.
-9. CI applies to dev and runs smoke tests; if dev apply and smoke pass, it automatically applies to prod and runs prod smoke tests. The inter-environment gate is automated (a failed dev apply or dev smoke blocks prod); there is no second human approval before prod.
-
-Principle: the local checks and the CI gates run the same tools with the same configs (via `scripts/`), so a change that passes locally passes in CI.
-
 ## Hard rules
+
+These bind every role.
 
 - No local `apply` or `destroy` of application stacks. Ever.
 - Every application change goes through a pull request. No direct pushes to `main` for infrastructure changes once the pipeline is live.
-- Run the review panel before opening a PR.
 - Never commit account IDs, bucket names, role ARNs, or emails. See "Secrets and scrubbing".
 - Do not weaken a blocking gate or a branch protection rule to make a change pass. Fix the change.
-
-## Terraform conventions
-
-- Layout: each stack is a module in `modules/<name>/`, consumed by thin roots `stacks/<name>/dev/` and `stacks/<name>/prod/`.
-- State: S3 backend, native lockfile (`use_lockfile = true`), one key per root (`stacks/<name>/<env>/terraform.tfstate`). Backend uses partial config; supply `bucket` via `-backend-config=backend.tfbackend`.
-- Tagging: provider `default_tags` with `Project`, `Stack`, `Environment`, and `ManagedBy = "terraform"` on every resource. Set `default_tags` in the root, not the module.
-- Naming: base every resource name on `<project>-<stack>-<environment>` (exposed as `local.name` in the scaffolded module). For globally-unique names (for example S3 buckets) append the account ID, sourced from `data.aws_caller_identity.current.account_id` in the root and passed to the module as `var.account_id`. Never hardcode the account ID.
-- Modules: prefer pinned community modules (`terraform-aws-modules/*`) for complex infrastructure; raw resources for simple things. Always pin module and provider versions.
-- Region: default `us-east-1`.
-- Terraform version: pinned via `.terraform-version` (currently 1.15.7, minimum 1.10 for the native S3 lockfile).
-- Commit `.terraform.lock.hcl`. Include both `linux_amd64` (CI) and `darwin_arm64` (local) hashes: `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`.
+- The implementer runs the review panel before opening a PR.
 
 ## Secrets and scrubbing (public repo)
 
 - Never commit account IDs, bucket names, role ARNs, or emails.
 - Backends use partial configuration; the `bucket` value lives in a git-ignored `backend.tfbackend` locally and in CI variables.
 - Real variable values live in git-ignored `terraform.tfvars` and `*.tfbackend` locally, and in GitHub secrets and variables in CI.
-- Before every commit, scan staged content: `git grep --cached -nE "<account-id>|<bucket-prefix>|:role/|@"` and confirm it is clean.
+- Before every commit, run `scripts/scan-secrets.sh` (or scan staged content: `git grep --cached -nE "<account-id>|<bucket-prefix>|:role/|@"`) and confirm it is clean.
 - `.gitignore` excludes `terraform.tfvars`, `*.auto.tfvars`, `*.tfbackend`, `*.tfstate*`, `tfplan`, and `.terraform/`.
-
-## Command surface
-
-Prefer the scripts in `scripts/` over ad hoc commands, so every run and CI do the same thing.
-
-- `scripts/preflight.sh` - verify credentials and tooling.
-- `scripts/new-stack.sh <name>` - scaffold a module + dev/prod roots from the template.
-- `scripts/check.sh <root>` - fmt, validate, tflint, and the scanners CI runs.
-- `scripts/plan.sh <root>` - init against remote state, plan, and estimate cost.
-- `scripts/lock.sh <root>` - record provider hashes for linux (CI) and macOS (local).
-- `scripts/stack-roots.sh [base-ref]` - list stack roots (all, or those changed vs a base ref) as JSON for the CI matrix.
-- `scripts/scan-secrets.sh` - fail if forbidden identifiers are staged or tracked.
-
-Authenticate first: `aws sso login --profile aws-infra` then `export AWS_PROFILE=aws-infra`.
-
-## Definition of Done
-
-A change is done when every box in the pull request template checklist is satisfied. In short:
-
-- Module + dev/prod roots, matching the scaffolder shape.
-- `scripts/check.sh` and `scripts/plan.sh` pass; a re-plan is a no-op.
-- Infracost delta captured; review-panel findings resolved or justified.
-- `scripts/scan-secrets.sh` clean; no account IDs, buckets, ARNs, or emails committed.
-- `default_tags` present, environment in resource names, provider and module versions pinned.
-- No local apply of an application stack; the PR is opened for CI to apply.
 
 ## Branches and pull requests
 
 - Branch names: `<type>/<scope>`, where type is `feat`, `fix`, `chore`, `ci`, or `docs` (for example `feat/sqs-queue`).
-- One logical change per PR. Fill in the pull request template completely.
+- One logical change per PR, mapping to one issue. Fill in the pull request template completely.
 - Never push infrastructure changes directly to `main` once the pipeline is live. Use a PR.
+- A human reviews and merges the PR. Merge is the single deploy approval; after it, CI applies dev then prod automatically (the inter-environment gate is automated). There is no second human approval before prod.
 
 ## Writing and commit conventions
 
@@ -103,8 +64,8 @@ A change is done when every box in the pull request template checklist is satisf
 ## Working the build
 
 - Current state lives in `docs/status.md`. Read it first to orient.
-- The maturation is tracked as GitHub issues (Phases 2-8, with epic issue #8). Work them in dependency order; do not start a phase before its dependencies are merged.
-- Issues labeled `needs-human` contain steps only the repo owner can do (SSO login and apply of foundational stacks, entering secret values, approving the production deploy gate). Prepare everything up to that point and hand off explicitly.
+- The maturation is tracked as GitHub issues. Work them in dependency order; do not start work before its dependencies are merged.
+- Issues labeled `needs-human` contain steps only the repo owner can do (SSO login and apply of foundational stacks, entering secret values, the PR merge). Prepare everything up to that point and hand off explicitly.
 - When something breaks, check `docs/troubleshooting.md` before improvising.
 
 ## Where things live
@@ -113,12 +74,14 @@ A change is done when every box in the pull request template checklist is satisf
 - `DESIGN.md` - authoritative design and rationale.
 - `docs/ci.md` - CI configuration contract (environment, variable, and secret names).
 - `docs/troubleshooting.md` - known failure modes and fixes.
+- `.claude/agents/orchestrator.md` - the orchestrator (PM) role.
+- `.claude/agents/implementer.md` - the implementer (builder) role.
+- `.claude/agents/` - also the review-panel subagents (security, compliance, cost, correctness reviewers).
+- `.claude/skills/provision-aws/SKILL.md` - the implementer's playbook: procedure, Terraform conventions, command surface, Definition of Done.
 - `scripts/` - the command surface shared by local work and CI.
 - `templates/stack/` - the canonical stack template used by the scaffolder.
-- `.claude/skills/provision-aws/SKILL.md` - the provisioning procedure.
-- `.claude/agents/` - the review-panel subagents (security, compliance, cost, correctness reviewers).
 - `foundation/` - state backend and GitHub OIDC roles (laptop-applied).
 - `modules/` - reusable modules. `stacks/<name>/{dev,prod}/` - per-environment roots.
-- `policy/` - Conftest/OPA compliance policies and Checkov config (added in Phase 4).
-- `tests/` - post-apply smoke tests (added in Phase 8).
-- `.github/workflows/` - CI (added in Phases 4, 7, 8).
+- `policy/` - Conftest/OPA compliance policies and Checkov config.
+- `tests/` - post-apply smoke tests.
+- `.github/workflows/` - CI (PR checks, deploy, drift).

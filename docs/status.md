@@ -26,3 +26,10 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 - `scripts/` - the command surface: `preflight`, `new-stack`, `check`, `plan`, `scan-secrets`. Local and CI call these.
 - `templates/stack/` - canonical stack template used by `scripts/new-stack.sh`.
+
+## Agent architecture
+
+- Two roles, split for lean context. `AGENTS.md` holds only the universal guardrails (always loaded); the implementation detail lives in the `provision-aws` skill and loads only when building.
+- `.claude/agents/orchestrator.md` - Agile PM: intake, planning, filing implementer issues, managing the loop to done. Does not author/plan/apply Terraform.
+- `.claude/agents/implementer.md` - builder: takes one issue, follows the `provision-aws` skill (author -> review panel -> PR), runs as a separate session. Never applies application stacks.
+- `.claude/agents/{security,compliance,cost,correctness}-reviewer.md` - the read-only review panel the implementer spawns before a PR.
