@@ -24,9 +24,8 @@
 # Other env:
 #   AGENT_DRY_RUN=1   print the resolved provider/model/command instead of running it.
 #
-# Read-only by default (reviewers). --writable widens the sandbox for a builder agent
-# (Claude: adds Edit/Write/Bash; Codex: workspace-write). It never enables an apply;
-# the no-local-apply rule is enforced by the agent's own instructions and settings.json.
+# Read-only by default (reviewers). --writable is reserved for the implementer
+# and is constrained here, not left to the child agent's settings.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -74,14 +73,27 @@ RUBRIC="$(awk 'BEGIN{sep=0} /^---[[:space:]]*$/{sep++; next} sep>=2{print}' "$DE
 CONTEXT="$(cat)"
 [ -n "$CONTEXT" ] || warn "agent $NAME received empty stdin context"
 
+if [ "$WRITABLE" -eq 1 ] && [ "$NAME" != "implementer" ]; then
+  die "--writable is reserved for the implementer; reviewers and other specialists stay read-only"
+fi
+
+CLAUDE_IMPLEMENTER_TOOLS="Read Grep Glob Edit Write Bash(git status:*) Bash(git diff:*) Bash(git add:*) Bash(git commit:*) Bash(git push:*) Bash(git switch:*) Bash(git branch:*) Bash(git rev-parse:*) Bash(git log:*) Bash(git show:*) Bash(git fetch:*) Bash(git merge-base:*) Bash(git ls-files:*) Bash(git grep:*) Bash(gh auth status:*) Bash(gh issue view:*) Bash(gh issue comment:*) Bash(gh pr create:*) Bash(gh pr view:*) Bash(gh pr edit:*) Bash(gh pr status:*) Bash(gh pr checks:*) Bash(terraform init:*) Bash(terraform validate:*) Bash(terraform fmt:*) Bash(terraform plan:*) Bash(terraform show:*) Bash(terraform output:*) Bash(terraform providers:*) Bash(terraform version:*) Bash(tflint:*) Bash(checkov:*) Bash(conftest:*) Bash(infracost:*) Bash(shellcheck:*) Bash(bash -n:*) Bash(scripts/preflight.sh:*) Bash(scripts/new-stack.sh:*) Bash(scripts/check.sh:*) Bash(scripts/plan.sh:*) Bash(scripts/lock.sh:*) Bash(scripts/scan-secrets.sh:*) Bash(scripts/review.sh:*) Bash(scripts/smoke.sh:*)"
+CLAUDE_IMPLEMENTER_DENY="Bash(terraform apply:*) Bash(terraform destroy:*)"
+
 run_claude() {
   local tools="Read Grep Glob"
-  [ "$WRITABLE" -eq 1 ] && tools="Read Grep Glob Edit Write Bash"
+  local deny=()
+  if [ "$WRITABLE" -eq 1 ]; then
+    tools="$CLAUDE_IMPLEMENTER_TOOLS"
+    deny=(--disallowedTools "$CLAUDE_IMPLEMENTER_DENY")
+  fi
   # Rubric as an appended system prompt; the piped stdin is the task/context.
   set -- claude -p --append-system-prompt "$RUBRIC" --allowedTools "$tools"
+  [ "${#deny[@]}" -gt 0 ] && set -- "$@" "${deny[@]}"
   [ -n "$MODEL" ] && set -- "$@" --model "$MODEL"
   if [ "${AGENT_DRY_RUN:-0}" = "1" ]; then
     printf 'DRY-RUN provider=claude model=%s writable=%s tools=[%s]\n' "${MODEL:-default}" "$WRITABLE" "$tools"
+    [ "${#deny[@]}" -gt 0 ] && printf 'DENY: %s\n' "$CLAUDE_IMPLEMENTER_DENY"
     printf 'CMD: %s\n' "$*"
     return 0
   fi
@@ -90,7 +102,10 @@ run_claude() {
 
 run_codex() {
   local sandbox="read-only"
-  [ "$WRITABLE" -eq 1 ] && sandbox="workspace-write"
+  if [ "$WRITABLE" -eq 1 ]; then
+    [ "${IMPLEMENTER_CODEX_OPT_IN:-0}" = "1" ] || die "writable Codex implementer runs are disabled unless IMPLEMENTER_CODEX_OPT_IN=1"
+    sandbox="workspace-write"
+  fi
   local last; last="$(mktemp)"
   # Rubric + task combined as the instruction; final message captured cleanly via -o.
   local prompt; prompt="$RUBRIC
@@ -98,8 +113,8 @@ run_codex() {
 ---
 
 $CONTEXT"
-  set -- codex exec --sandbox "$sandbox" --skip-git-repo-check -C "$REPO_ROOT" -o "$last" -
-  [ -n "$MODEL" ] && set -- codex exec --sandbox "$sandbox" --skip-git-repo-check -C "$REPO_ROOT" --model "$MODEL" -o "$last" -
+  set -- codex exec --sandbox "$sandbox" --ask-for-approval never --skip-git-repo-check -C "$REPO_ROOT" -o "$last" -
+  [ -n "$MODEL" ] && set -- codex exec --sandbox "$sandbox" --ask-for-approval never --skip-git-repo-check -C "$REPO_ROOT" --model "$MODEL" -o "$last" -
   if [ "${AGENT_DRY_RUN:-0}" = "1" ]; then
     printf 'DRY-RUN provider=codex model=%s writable=%s sandbox=%s\n' "${MODEL:-default}" "$WRITABLE" "$sandbox"
     printf 'CMD: %s\n' "$*"

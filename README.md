@@ -47,7 +47,7 @@ DESIGN.md            authoritative design specification
 ## Prerequisites
 
 - A dedicated AWS account with IAM Identity Center (SSO) and an `AdministratorAccess` permission set.
-- Local tooling: `terraform` (>= 1.10), `awscli`, `infracost`, `tflint`, `checkov`, and `conftest`.
+- Local tooling: `terraform` (>= 1.10), `awscli`, `gh`, `jq`, `infracost`, `tflint`, `checkov`, and `conftest`.
 - An Infracost account (`infracost auth login`) that belongs to an organization.
 
 ## Local setup

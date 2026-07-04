@@ -24,7 +24,7 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 ## Tooling in the repo
 
-- `scripts/` - the command surface: `preflight`, `new-stack`, `check`, `plan`, `scan-secrets`, plus `agent.sh` and `review.sh` (agent launchers). Local and CI call these.
+- `scripts/` - the command surface: `preflight`, `new-stack`, `check`, `plan`, `scan-secrets`, plus `agent.sh`, `implement.sh`, and `review.sh` (agent launchers). Local and CI call these.
 - `templates/stack/` - canonical stack template used by `scripts/new-stack.sh`.
 
 ## Agent architecture
@@ -33,5 +33,5 @@ Detailed phase specs are the GitHub issues (epic: #8).
 - `.claude/agents/orchestrator.md` - Agile PM: intake, planning, filing implementer issues, managing the specialist agents and the loop to done. Does not author/plan/apply Terraform.
 - `.claude/agents/implementer.md` - builder: takes one issue, follows the `provision-aws` skill (author -> review panel -> PR), runs as a separate session. Never applies application stacks.
 - `.claude/agents/{security,compliance,cost,correctness}-reviewer.md` - the read-only review panel.
-- Agents run as independent processes, provider-agnostic across Claude Code and Codex, launched via `scripts/agent.sh` (one specialist) and `scripts/review.sh` (the panel, precompute-once + provider-spread). Reviewer definitions double as native subagents if ever launched in-session.
-- Follow-up: an orchestrator-launched headless implementer (`scripts/agent.sh <impl> --writable`, strict no-apply allowlist); today the implementer is a separate steered session.
+- Agents run as independent processes, provider-agnostic across Claude Code and Codex, launched via `scripts/agent.sh` (one specialist), `scripts/implement.sh` (the writable implementer), and `scripts/review.sh` (the panel, precompute-once + provider-spread). Reviewer definitions double as native subagents if ever launched in-session.
+- The orchestrator can now launch the implementer headlessly with `scripts/implement.sh <issue>`. Writable mode is reserved for the implementer, scoped at the launcher, and denies local `terraform apply`/`destroy`. Codex writable implementer runs are opt-in with `IMPLEMENTER_CODEX_OPT_IN=1` because local plan output can cross the identifier data boundary.

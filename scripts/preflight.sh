@@ -22,6 +22,15 @@ else
   rc=1
 fi
 
+for t in gh jq; do
+  if has "$t"; then
+    ok "$t present"
+  else
+    warn "$t not installed"
+    rc=1
+  fi
+done
+
 # Gate tools. Missing ones are warnings, not failures, because some are added in later phases.
 for t in tflint checkov conftest infracost; do
   if has "$t"; then ok "$t present"; else warn "$t not installed (needed by the gate stack)"; fi
