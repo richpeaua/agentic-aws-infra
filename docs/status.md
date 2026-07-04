@@ -29,9 +29,9 @@ Detailed phase specs are the GitHub issues (epic: #8).
 
 ## Agent architecture
 
-- Two roles, split for lean context. `AGENTS.md` holds only the universal guardrails (always loaded); the implementation detail lives in the `provision-aws` skill and loads only when building.
-- `.claude/agents/orchestrator.md` - Agile PM: intake, planning, filing implementer issues, managing the specialist agents and the loop to done. Does not author/plan/apply Terraform.
-- `.claude/agents/implementer.md` - builder: takes one issue, follows the `provision-aws` skill (author -> review panel -> PR), runs as a separate session. Never applies application stacks.
+- Two roles, split for lean context. `AGENTS.md` holds only the universal guardrails (always loaded); infrastructure implementation detail lives in the `provision-aws` skill and loads only when building AWS/Terraform work.
+- `.claude/agents/orchestrator.md` - Agile PM: checks GitHub issues before new intake, summarizes open work, asks whether to address open issues or continue with the new request, plans, files implementer issues, manages the specialist agents, and drives the loop to done. Defers non-PM and non-workflow-orchestration actions to the implementer.
+- `.claude/agents/implementer.md` - builder: takes one issue, owns all scripting and coding tasks, uses Bash or Python only for scripts with Bash preferred, follows the `provision-aws` skill for AWS/Terraform work, verifies locally, runs the review panel when required, and opens a PR. Never applies application stacks.
 - `.claude/agents/{security,compliance,cost,correctness}-reviewer.md` - the read-only review panel.
 - Agents run as independent processes, provider-agnostic across Claude Code and Codex, launched via `scripts/agent.sh` (one specialist), `scripts/implement.sh` (the writable implementer), and `scripts/review.sh` (the panel, precompute-once + provider-spread). Reviewer definitions double as native subagents if ever launched in-session.
 - The orchestrator can now launch the implementer headlessly with `scripts/implement.sh <issue>`. Writable mode is reserved for the implementer, scoped at the launcher, and denies local `terraform apply`/`destroy`. Codex writable implementer runs are opt-in with `IMPLEMENTER_CODEX_OPT_IN=1` because local plan output can cross the identifier data boundary.
