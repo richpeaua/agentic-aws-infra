@@ -6,7 +6,8 @@ description: The implementer's playbook. Author AWS infrastructure as Terraform 
 # provision-aws - the implementer's playbook
 
 This skill is the complete procedure for the **implementer** role (see `.claude/agents/implementer.md`).
-The orchestrator plans a request and files an issue; a fresh implementer session picks up that issue and follows this skill to build the change and open a PR.
+The orchestrator plans a request, files an issue, and launches a fresh implementer session with `scripts/implement.sh <issue>`.
+The implementer follows this skill to build the change and open a PR.
 The universal guardrails live in `AGENTS.md`; follow them. The full rationale is in `DESIGN.md`.
 The implementation-specific detail (Terraform conventions, command surface, Definition of Done) lives here so it loads only when someone is actually implementing, not in every agent's context.
 
@@ -39,6 +40,9 @@ Run the loop autonomously: scaffold, author, check, plan, review panel, and open
 7. Hand off: CI runs the gates; the human reviews and merges. On merge, CI applies dev, runs dev smoke tests, and - if dev apply and smoke pass - automatically applies prod and runs prod smoke tests. There is no second human gate before prod; the merge is the deploy approval.
 
 Do not apply. Do not merge on the user's behalf unless asked.
+
+When launched headlessly, review findings are handled by re-dispatch rather than an interactive conversation.
+The orchestrator runs `scripts/implement.sh <issue> --findings <file>` with the prior findings attached, and you fix only that issue's branch.
 
 ## Terraform conventions
 
@@ -111,8 +115,15 @@ Prefer these scripts over ad hoc commands, so every run and CI do the same thing
 - `scripts/plan.sh <root>` - init against remote state, plan, and estimate cost.
 - `scripts/lock.sh <root>` - record provider hashes for linux (CI) and macOS (local).
 - `scripts/scan-secrets.sh` - fail if forbidden identifiers are staged or tracked.
+- `scripts/implement.sh <issue>` - launch this implementer headlessly for one issue with the constrained writable tool surface.
 - `scripts/review.sh <root>` - run the review panel as four independent agents (precompute once, spread across providers).
 - `scripts/agent.sh <name>` - launch one specialist agent (`.claude/agents/<name>.md`) headlessly on Claude or Codex; context on stdin.
+
+Writable implementer provider policy:
+
+- Claude is the default for credentialed implementer runs.
+- Codex writable runs require `IMPLEMENTER_CODEX_OPT_IN=1`, because local plan and scanner output can expose account IDs, bucket names, role ARNs, and emails to OpenAI.
+- Never use dangerous sandbox or permission bypass flags.
 
 Authenticate first: `aws sso login --profile aws-infra` then `export AWS_PROFILE=aws-infra`.
 

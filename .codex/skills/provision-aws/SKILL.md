@@ -6,6 +6,7 @@ description: The implementer's playbook for this repository. Use whenever Codex 
 # provision-aws - implementer playbook
 
 Use this skill when acting as the implementer for one issue in this repository.
+The orchestrator launches headless implementer runs with `scripts/implement.sh <issue>`.
 The universal guardrails live in `AGENTS.md`.
 The architecture and rationale live in `DESIGN.md`.
 Read `docs/status.md` before work so you know the current build state.
@@ -44,6 +45,9 @@ One issue maps to one branch and one pull request.
 
 Do not apply.
 Do not merge the PR unless the user explicitly asks.
+
+When launched headlessly, review findings are handled by re-dispatch rather than an interactive conversation.
+The orchestrator runs `scripts/implement.sh <issue> --findings <file>` with the prior findings attached, and you fix only that issue's branch.
 
 ## Terraform Conventions
 
@@ -96,6 +100,13 @@ Prefer repository scripts over ad hoc commands:
 - `scripts/plan.sh <root>`
 - `scripts/lock.sh <root>`
 - `scripts/scan-secrets.sh`
+- `scripts/implement.sh <issue>`
+
+Writable implementer provider policy:
+
+- Claude is the default for credentialed implementer runs.
+- Codex writable runs require `IMPLEMENTER_CODEX_OPT_IN=1`, because local plan and scanner output can expose account IDs, bucket names, role ARNs, and emails to OpenAI.
+- Never use dangerous sandbox or permission bypass flags.
 
 Authentication, when needed:
 

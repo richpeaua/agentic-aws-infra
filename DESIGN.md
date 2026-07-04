@@ -27,8 +27,8 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 ## Roles
 
 - Human: describes infrastructure in natural language, then reviews and merges PRs. Merge is the single deploy approval; there is no separate environment-gate click.
-- Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, and manages the specialist agents and the loop to completion. It does not author, plan, or apply Terraform.
-- Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a separate session. It does not apply application stacks.
+- Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, launches the implementer with `scripts/implement.sh`, and manages the specialist agents and the loop to completion. It does not author, plan, or apply Terraform.
+- Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a headless writable session. It does not apply application stacks.
 - Review panel: four read-only reviewers (Security, Compliance, Cost, Correctness), defined in `.claude/agents/` and launched as independent, provider-agnostic agents via `scripts/review.sh` to critique the draft before the PR.
 - CLIs: the agents run on Claude Code (`claude`) and OpenAI Codex (`codex`), interchangeably per `scripts/agent.sh`, so load spreads across providers.
 - CI: GitHub Actions. It runs the gates on PRs and performs applies via short-lived OIDC credentials.
@@ -37,9 +37,9 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 
 1. The human describes the desired infrastructure to the orchestrator.
 2. The orchestrator clarifies scope, plans the work, and files one GitHub issue per independently-shippable unit. The issues are the handoff to the implementer.
-3. For each issue a separate implementer session creates or edits a stack as a module plus thin per-environment roots on a new branch, and runs `terraform fmt`, `validate`, `plan`, and Infracost locally to produce a draft and a cost figure.
+3. For each issue the orchestrator launches a separate implementer session with `scripts/implement.sh <issue>`. The implementer creates or edits a stack as a module plus thin per-environment roots on a new branch, and runs `terraform fmt`, `validate`, `plan`, and Infracost locally to produce a draft and a cost figure.
 4. The implementer computes the deterministic tool output once and fans out to the review panel in parallel. Each reviewer is read-only, reasons over the provided artifacts, and reports findings.
-5. The implementer applies fixes for panel findings, then re-plans.
+5. The implementer applies fixes for panel findings, then re-plans. If a headless pass needs follow-up, the orchestrator re-dispatches `scripts/implement.sh <issue> --findings <file>` with the prior findings attached.
 6. The implementer pushes the branch and opens a PR with `gh`.
 7. CI runs the gate stack on the PR and posts plan, security, compliance, and cost results as a comment.
 8. The human reviews and merges the PR. Merge is the single approval - both code and deploy approval.
@@ -132,6 +132,16 @@ The reviewers run as independent processes, not in-session subagents. `scripts/a
 `scripts/review.sh` uses this to spread the four reviewers across providers (round-robin over Claude and Codex by default, per-agent overridable), so a review draws on more than one token budget and the panel is not bottlenecked on a single account.
 The orchestrator manages these specialists as part of its loop: it launches the panel at the point a change is ready to review, and it can launch a single reviewer for a light pass. Because the specialists are independent processes rather than nested subagents, there is no subagent-nesting limit to work around.
 
+The implementer is launched separately through `scripts/implement.sh`, which calls `scripts/agent.sh implementer --writable`.
+Writable mode is reserved for the implementer and is constrained at the launcher.
+For Claude, the launcher grants only scoped tools and command patterns needed to author a PR: file editing, `git`, `gh`, read-only Terraform commands (`init`, `validate`, `fmt`, `plan`, `show`, `output`, `providers`, `version`), scanners, and repository scripts.
+It explicitly denies `terraform apply` and `terraform destroy`.
+It never uses dangerous permission bypass flags.
+
+Writable Codex implementer runs are opt-in only.
+Terraform plans and local tool output can contain account IDs, bucket names, role ARNs, and emails, which this public repo forbids committing.
+By default, identifier-bearing implementer runs are pinned to Claude; Codex can be used only when the operator sets `IMPLEMENTER_CODEX_OPT_IN=1` after deciding the run's data boundary is acceptable.
+
 ### Precompute once, reason many
 
 The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by `scripts/review.sh`, reusing what the implementer already produced for the draft.
@@ -168,7 +178,7 @@ This catches out-of-band changes made outside the pipeline.
 ## Local vs CI write boundary
 
 - The laptop may apply foundational stacks only: the state backend and the OIDC provider and roles. These have a chicken-and-egg dependency because they are what let CI apply at all.
-- The laptop may never apply or destroy application stacks. This is enforced by `.claude/settings.json` and by the `provision-aws` skill.
+- The laptop may never apply or destroy application stacks. This is enforced by `.claude/settings.json`, the writable implementer launcher, and by the `provision-aws` skill.
 - A documented, deliberately friction-ful break-glass procedure exists for emergencies. It is not an easy button.
 
 ## Secrets and configuration management
@@ -190,6 +200,8 @@ This catches out-of-band changes made outside the pipeline.
   settings.json       # local apply/destroy blocked for application stacks; plan/scan allowed
   agents/             # orchestrator (PM), implementer, and the four reviewers (independent agents)
   skills/provision-aws/   # the implementer's playbook: author -> panel -> PR (no local apply)
+scripts/
+  implement.sh        # orchestrator entry point for a constrained writable implementer
 foundation/
   state-backend/      # S3 state bucket + AWS Budget (laptop-applied)
   github-oidc/        # OIDC provider + read, dev-apply, prod-apply roles (laptop-applied)
@@ -218,7 +230,7 @@ Claude Code auto-loads them via `CLAUDE.md`, which imports `AGENTS.md`.
 - Create the public GitHub repo and push.
 - Apply the `github-oidc` foundation stack from the laptop.
 - In GitHub: create the `dev` and `production` Environments (both with a deployment-branch policy restricting deployments to `main`; no required reviewer - merge is the single deploy gate), add the secrets and variables, and enable branch protection with the blocking gates as required status checks.
-- Install local tooling: `tflint`, `checkov`, and `conftest` (or `opa`), in addition to `terraform`, `awscli`, and `infracost`.
+- Install local tooling: `gh`, `jq`, `tflint`, `checkov`, and `conftest` (or `opa`), in addition to `terraform`, `awscli`, and `infracost`.
 
 ## Build phases
 

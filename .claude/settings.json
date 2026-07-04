@@ -17,7 +17,11 @@
       "Bash(aws sts get-caller-identity:*)",
       "Bash(aws sso login:*)",
       "Bash(scripts/review.sh:*)",
-      "Bash(scripts/agent.sh:*)"
+      "Bash(scripts/agent.sh security-reviewer:*)",
+      "Bash(scripts/agent.sh compliance-reviewer:*)",
+      "Bash(scripts/agent.sh cost-reviewer:*)",
+      "Bash(scripts/agent.sh correctness-reviewer:*)",
+      "Bash(scripts/implement.sh:*)"
     ],
     "ask": [
       "Bash(terraform apply:*)",
