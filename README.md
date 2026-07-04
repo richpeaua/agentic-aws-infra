@@ -11,7 +11,7 @@ The agent's operating procedure lives in [`.claude/skills/provision-aws/SKILL.md
 
 1. You describe infrastructure in natural language to the orchestrator agent, which plans the work and files an issue for each unit.
 2. An implementer agent picks up an issue and authors Terraform on a branch: a reusable module plus thin per-environment roots.
-3. The implementer runs a local review panel of specialized subagents (security, compliance, cost, correctness), fixes their findings, and opens a pull request.
+3. The review panel runs as four independent specialist agents (security, compliance, cost, correctness), launched via `scripts/review.sh` and spread across Claude and Codex; their findings are fixed before a pull request is opened.
 4. CI runs the gate stack on the PR (plan, tflint, Checkov, Conftest/OPA, Infracost) and posts the results.
 5. You review and merge the PR. Merge is the single approval - both code and deploy approval.
 6. CI applies to dev and runs smoke tests, then, if dev apply and smoke pass, applies to prod automatically and runs prod smoke tests. The gate between dev and prod is automated, not a second human click.
@@ -33,8 +33,9 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 .github/workflows/   CI: PR checks, deploy pipeline, drift detection
 .claude/
   settings.json      local apply/destroy blocked for application stacks
-  agents/            orchestrator (PM), implementer, and the four reviewer subagents
+  agents/            orchestrator (PM), implementer, and the four reviewers
   skills/provision-aws/   the implementer's operating procedure
+scripts/             command surface: check/plan/lock/scan + agent.sh, review.sh
 foundation/          state backend + GitHub OIDC provider and roles (laptop-applied)
 modules/             reusable Terraform modules
 stacks/<name>/       per-stack thin roots: dev/ and prod/

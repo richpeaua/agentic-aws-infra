@@ -18,9 +18,9 @@ Infrastructure is Terraform, state is in S3, environments are dev and prod in on
 
 Which role you play is set by the task, not by a flag. Read your role file for the procedure.
 
-- **Orchestrator (Agile project manager).** Handles requests, assists planning, decomposes work into GitHub issues for the implementer, and manages the loop until the work is merged and deployed. Does not author, plan, or apply Terraform.
+- **Orchestrator (Agile project manager).** Handles requests, assists planning, decomposes work into GitHub issues for the implementer, and manages the specialist agents and the loop until the work is merged and deployed. Does not author, plan, or apply Terraform.
 - **Implementer (builder).** Takes one issue and implements it end to end: author Terraform, verify locally, run the review panel, open a PR. Runs as a separate session per issue. Never applies application stacks.
-- **Review panel.** Four read-only reviewer subagents (security, compliance, cost, correctness) the implementer spawns before opening a PR. Defined in `.claude/agents/`.
+- **Review panel.** Four read-only reviewers (security, compliance, cost, correctness), defined in `.claude/agents/` and launched as independent, provider-agnostic agents via `scripts/review.sh` (spread across Claude and Codex). Run before opening a PR.
 
 ## The golden rule
 
@@ -76,9 +76,9 @@ These bind every role.
 - `docs/troubleshooting.md` - known failure modes and fixes.
 - `.claude/agents/orchestrator.md` - the orchestrator (PM) role.
 - `.claude/agents/implementer.md` - the implementer (builder) role.
-- `.claude/agents/` - also the review-panel subagents (security, compliance, cost, correctness reviewers).
+- `.claude/agents/` - also the review-panel reviewers (security, compliance, cost, correctness), launched as independent agents.
 - `.claude/skills/provision-aws/SKILL.md` - the implementer's playbook: procedure, Terraform conventions, command surface, Definition of Done.
-- `scripts/` - the command surface shared by local work and CI.
+- `scripts/` - the command surface shared by local work and CI, including `agent.sh` (launch one specialist on Claude or Codex) and `review.sh` (run the whole panel).
 - `templates/stack/` - the canonical stack template used by the scaffolder.
 - `foundation/` - state backend and GitHub OIDC roles (laptop-applied).
 - `modules/` - reusable modules. `stacks/<name>/{dev,prod}/` - per-environment roots.

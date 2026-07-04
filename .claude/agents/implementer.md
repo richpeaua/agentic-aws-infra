@@ -19,7 +19,7 @@ Invoke the **`provision-aws` skill**. It is your complete procedure and it carri
 
 - the loop (scaffold, author, check, plan, review panel, PR);
 - the Terraform conventions (layout, state, tagging, naming, module and version pinning, lockfile);
-- the review-panel procedure (precompute the tool output once, dispatch the reasoning-only reviewers, risk-gating);
+- the review-panel procedure (`scripts/review.sh <root>`: precompute the tool output once, run the reasoning-only reviewers as independent provider-agnostic agents, risk-gating);
 - the command surface (`scripts/*`);
 - the Definition of Done.
 

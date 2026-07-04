@@ -27,9 +27,10 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 ## Roles
 
 - Human: describes infrastructure in natural language, then reviews and merges PRs. Merge is the single deploy approval; there is no separate environment-gate click.
-- Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, and manages the loop to completion. It does not author, plan, or apply Terraform.
+- Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, and manages the specialist agents and the loop to completion. It does not author, plan, or apply Terraform.
 - Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a separate session. It does not apply application stacks.
-- Review panel: four read-only Claude Code subagents (Security, Compliance, Cost, Correctness) that the implementer spawns to critique the draft before the PR.
+- Review panel: four read-only reviewers (Security, Compliance, Cost, Correctness), defined in `.claude/agents/` and launched as independent, provider-agnostic agents via `scripts/review.sh` to critique the draft before the PR.
+- CLIs: the agents run on Claude Code (`claude`) and OpenAI Codex (`codex`), interchangeably per `scripts/agent.sh`, so load spreads across providers.
 - CI: GitHub Actions. It runs the gates on PRs and performs applies via short-lived OIDC credentials.
 
 ## End-to-end loop
@@ -114,7 +115,7 @@ Blocking gates are configured as required status checks in branch protection.
 
 ## Multi-agent review panel
 
-After the implementer drafts a stack, it spawns four read-only reviewer subagents in parallel.
+Once a change is drafted on a branch, the review panel runs as four **independent agents** in parallel, launched by `scripts/review.sh`.
 They mirror the CI gates so problems are caught and fixed before the PR (shift-left), while CI remains the authoritative backstop.
 
 - Security agent: reasons like Checkov plus threat modeling. Flags insecure configuration and risky patterns.
@@ -125,9 +126,15 @@ They mirror the CI gates so problems are caught and fixed before the PR (shift-l
 The reviewers are defined in `.claude/agents/`.
 Parallelism belongs in review, not authoring: there is a single author (the implementer) to avoid edit conflicts.
 
+### Independent, provider-agnostic agents
+
+The reviewers run as independent processes, not in-session subagents. `scripts/agent.sh` launches any agent definition headlessly on either backend - Claude Code (`claude -p`) or OpenAI Codex (`codex exec`) - by feeding the agent's markdown body as a portable rubric. One definition, either provider.
+`scripts/review.sh` uses this to spread the four reviewers across providers (round-robin over Claude and Codex by default, per-agent overridable), so a review draws on more than one token budget and the panel is not bottlenecked on a single account.
+The orchestrator manages these specialists as part of its loop: it launches the panel at the point a change is ready to review, and it can launch a single reviewer for a light pass. Because the specialists are independent processes rather than nested subagents, there is no subagent-nesting limit to work around.
+
 ### Precompute once, reason many
 
-The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by the implementer, which it has already done producing the draft.
+The deterministic tools (`terraform plan`, Checkov, Conftest, Infracost, tflint) are run **once** by `scripts/review.sh`, reusing what the implementer already produced for the draft.
 Their output plus the change diff is captured and passed into each reviewer's prompt.
 The reviewers are therefore **reasoning-only** (`tools: Read, Grep, Glob`): they reason over the artifacts they are handed and use `Read`/`Grep` only for specific extra context, never re-running the tools or re-reading the whole repo.
 This is a deliberate cost design: a naive panel has each of four agents independently re-read the same files and re-run the same tools, roughly quadrupling tokens and tool-uses for identical evidence. Computing shared artifacts once and having specialists reason over them removes that redundancy without losing coverage - each reviewer is given the same information it would have gathered.
@@ -181,7 +188,7 @@ This catches out-of-band changes made outside the pipeline.
     drift.yml         # scheduled drift detection
 .claude/
   settings.json       # local apply/destroy blocked for application stacks; plan/scan allowed
-  agents/             # orchestrator (PM), implementer, and the four reviewer subagents
+  agents/             # orchestrator (PM), implementer, and the four reviewers (independent agents)
   skills/provision-aws/   # the implementer's playbook: author -> panel -> PR (no local apply)
 foundation/
   state-backend/      # S3 state bucket + AWS Budget (laptop-applied)

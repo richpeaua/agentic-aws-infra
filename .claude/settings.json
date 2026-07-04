@@ -15,7 +15,9 @@
       "Bash(terraform version:*)",
       "Bash(infracost:*)",
       "Bash(aws sts get-caller-identity:*)",
-      "Bash(aws sso login:*)"
+      "Bash(aws sso login:*)",
+      "Bash(scripts/review.sh:*)",
+      "Bash(scripts/agent.sh:*)"
     ],
     "ask": [
       "Bash(terraform apply:*)",

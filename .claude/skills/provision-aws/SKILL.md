@@ -54,59 +54,36 @@ Do not apply. Do not merge on the user's behalf unless asked.
 ## Review panel
 
 Before opening the PR, run the review panel so problems are caught and fixed early (shift-left).
-The reviewers are **reasoning-only**: you compute the deterministic tool output **once**, and each reviewer reasons over the artifacts it is handed instead of re-gathering context and re-running tools. This is what keeps a panel run from costing 4x the tokens and tool-uses (one author's context, not four).
+The panel runs as **four independent agents**, one per dimension, launched by `scripts/review.sh`. The reviewers are **reasoning-only**: the script computes the deterministic tool output **once** and hands each reviewer only its relevant slice, so the specialists reason over shared evidence instead of each re-running the tools. Reviewers are provider-agnostic and spread across backends (Claude and Codex) to make the most of available tokens.
 
-### Step 1 - compute the shared artifacts once
+### Run it
 
-You have already run `scripts/check.sh` and `scripts/plan.sh` on each changed root (loop step 4). Capture their output once, into files under the scratchpad, so it can be pasted into reviewer prompts:
+```
+scripts/review.sh stacks/<name>/dev
+```
 
-- The **change diff**: `git diff main...HEAD` (or the staged/working diff before the branch exists).
-- The **`terraform plan` JSON** per changed root: `terraform -chdir=<root> show -json tfplan` (from the plan you already ran). This is the primary evidence for replacements and idempotency.
-- **Checkov** output for each changed root: `checkov -d <root> --config-file policy/checkov/.checkov.yaml`.
-- **Conftest** output: `conftest test <plan.json> --policy policy/conftest`.
-- **Infracost** output: `infracost scan <root> --llm` (the monthly estimate and breakdown).
-- **tflint** output for each changed root.
+`scripts/review.sh` gathers the artifacts once (change diff, `terraform plan` JSON, Checkov, Conftest, tflint, Infracost - plan is best-effort when credentials are absent), then launches the `security`, `compliance`, `cost`, and `correctness` reviewers in parallel via `scripts/agent.sh`, each fed only its relevant artifacts. It prints every reviewer's findings plus a verdict summary and exits non-zero if any reviewer returns `CHANGES NEEDED` (blocker/high). Run it for each changed root.
 
-`scripts/check.sh` and `scripts/plan.sh` already invoke these tools; the only new work is teeing their output to files. Do not make the reviewers run any of them again.
+Provider spreading and models are configurable (the default spreads the four across `claude` and `codex`):
 
-### Step 2 - gate by risk
+- `scripts/review.sh <root> --providers "claude codex"` - set the round-robin pool.
+- `AGENT_PROVIDER_<AGENT>=claude|codex`, `AGENT_MODEL_<AGENT>=<model>` - per-agent overrides (for example `AGENT_PROVIDER_SECURITY_REVIEWER=claude`).
+- `AGENT_DRY_RUN=1` or `scripts/review.sh <root> --dry-run` - print the resolved commands without invoking any agent.
 
-Assess the change against the risk heuristic below, then dispatch the matching review.
+### Gate by risk
 
-**Low-risk (single light pass).** Run one review pass (inline, or a single general reviewer) covering all four dimensions briefly, when the change is confined to:
+Scale the panel to the change:
 
-- tag value tweaks, `description`/comment changes, or variable-default changes with no new resources;
-- output-only or docs-only changes;
-- a plan that shows **no** create/replace/destroy of a resource (only in-place updates to non-security, non-cost attributes).
+- **Substantial change** - run the full `scripts/review.sh` panel. This is anything that creates, changes, or removes IAM or access; touches networking or public exposure; adds or changes a data store or encryption; shows any `must be replaced`/destroy in the plan; or introduces a new resource type or stack. When in doubt, run the full panel, and never skip **security** on an IAM/networking/public-access change.
+- **Trivial change** - a tag tweak, a docs/output-only change, or a plan with no create/replace/destroy. Run a single light pass instead of the full four, for example one reviewer over the diff: `git diff main...HEAD | scripts/agent.sh correctness-reviewer`.
 
-**Substantial (full four-agent panel).** Run the full panel whenever the change does any of:
-
-- creates, changes, or removes **IAM** (roles, policies, trust, principals) or any resource that grants access;
-- touches **networking** (VPC, subnets, security groups, routes, public IPs) or **public exposure** (S3 public access, `0.0.0.0/0`, ACLs/policies);
-- adds or changes a **data store** (S3, RDS, DynamoDB, EFS, secrets) or encryption settings;
-- shows any **`must be replaced`** or **destroy** in the plan;
-- introduces a **new resource type** or a new stack.
-
-When in doubt, run the full panel. Never let risk-gating drop **security** review on a change that touches IAM, networking, or public access.
-
-### Step 3 - dispatch the panel
-
-For a substantial change, dispatch these four read-only subagents (defined in `.claude/agents/`) in parallel. In each prompt, name the changed root(s) and paste the relevant precomputed artifacts:
-
-- `security-reviewer` - insecure configuration and risky patterns (mirrors Checkov). Give it: the diff + plan JSON + Checkov output.
-- `compliance-reviewer` - tags, naming, regions, public-bucket intent, structure (mirrors Conftest). Give it: the diff + plan JSON + Conftest output.
-- `cost-reviewer` - monthly cost, waste, cheaper alternatives (mirrors Infracost). Give it: the diff + Infracost output.
-- `correctness-reviewer` - Terraform quality, idempotency, state design, architecture (mirrors tflint plus judgment). Give it: the diff + plan JSON + tflint output.
-
-Pass enough context that a reviewer never needs to re-run a tool. Under-passing pushes it to ask for reads and erodes the savings. The reviewers still return the structured findings + one-line verdict format.
-
-### Step 4 - resolve
+### Resolve
 
 1. Fix every `blocker` and `high` finding; address or consciously accept `medium`/`low`/`nit`.
-2. Re-plan and confirm the plan still shows only intended changes. (If a fix materially changes risk, re-run the relevant artifact and reviewer.)
+2. Re-plan and confirm the plan still shows only intended changes, then re-run the panel if a fix materially changed risk.
 3. Summarize each reviewer's outcome in the PR body's "Review panel findings" section.
 
-If a reviewer cannot run (for example no subagent runtime), perform that review inline against the same rubric in its agent file. Do not skip a dimension.
+If a backend or agent CLI is unavailable, `scripts/review.sh` degrades gracefully and notes the missing artifacts; do not skip a dimension - run the missing reviewer against the same rubric by other means.
 
 ## Definition of Done
 
@@ -134,6 +111,8 @@ Prefer these scripts over ad hoc commands, so every run and CI do the same thing
 - `scripts/plan.sh <root>` - init against remote state, plan, and estimate cost.
 - `scripts/lock.sh <root>` - record provider hashes for linux (CI) and macOS (local).
 - `scripts/scan-secrets.sh` - fail if forbidden identifiers are staged or tracked.
+- `scripts/review.sh <root>` - run the review panel as four independent agents (precompute once, spread across providers).
+- `scripts/agent.sh <name>` - launch one specialist agent (`.claude/agents/<name>.md`) headlessly on Claude or Codex; context on stdin.
 
 Authenticate first: `aws sso login --profile aws-infra` then `export AWS_PROFILE=aws-infra`.
 
