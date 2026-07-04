@@ -19,17 +19,22 @@
 # (e.g. AGENT_PROVIDER_SECURITY_REVIEWER=claude).
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/scripts/lib/telemetry.sh"
 
-ROOT="${1:?usage: scripts/review.sh <root-dir> [--providers \"claude codex\"] [--base REF] [--dry-run]}"
+ROOT="${1:?usage: scripts/review.sh <root-dir> [--providers \"claude codex\"] [--base REF] [--issue N] [--pr N] [--dry-run]}"
 shift || true
 
 PROVIDERS_STR="claude codex"
 BASE="${REVIEW_BASE:-origin/main}"
+ISSUE_ARG=""
+PR_ARG=""
 DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --providers) PROVIDERS_STR="${2:?--providers needs a value}"; shift 2 ;;
     --base)      BASE="${2:?--base needs a value}"; shift 2 ;;
+    --issue)     ISSUE_ARG="${2:?--issue needs a value}"; shift 2 ;;
+    --pr)        PR_ARG="${2:?--pr needs a value}"; shift 2 ;;
     --dry-run)   DRY_RUN=1; shift ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -41,8 +46,20 @@ PROVIDERS=($PROVIDERS_STR)
 ROOT_ABS="$REPO_ROOT/$ROOT"
 [ -d "$ROOT_ABS" ] || die "no such root: $ROOT"
 
-ART="$(mktemp -d "${TMPDIR:-/tmp}/review.XXXXXX")"
-trap 'rm -rf "$ART"' EXIT
+# The panel is a parent run; the shared tool artifacts are persisted under it
+# (instead of being deleted at exit) so a completed review can be inspected later.
+# Each reviewer becomes a child run linked to this parent.
+RUN_ID=""; RUN_DIR=""
+if telemetry_enabled; then
+  RUN_ID="$(telemetry_new_run_id review)"
+  RUN_DIR="$(telemetry_run_dir "$RUN_ID")"
+  ART="$RUN_DIR/artifacts"
+  mkdir -p "$ART"
+  tel telemetry_init_run "$RUN_DIR" review review-panel multi "" "${ISSUE_ARG:-$PR_ARG}" ""
+else
+  ART="$(mktemp -d "${TMPDIR:-/tmp}/review.XXXXXX")"
+  trap 'rm -rf "$ART"' EXIT
+fi
 
 # capture <artifact-name> <cmd...> : run cmd, tee stdout+stderr into $ART/<name>.txt.
 # Never aborts the panel; a failed tool just yields a note the reviewers can see.
@@ -153,8 +170,13 @@ for r in $REVIEWERS; do
   agent_args="$r --provider $prov"
   [ "$DRY_RUN" -eq 1 ] && export AGENT_DRY_RUN=1
   log "dispatch: $r -> $prov"
+  # Open a child run per reviewer, linked to the parent, before launching it so
+  # its start time is accurate. Usage is captured to a per-child sidecar file.
+  if telemetry_enabled; then
+    tel telemetry_init_run "$(telemetry_run_dir "${RUN_ID}-${r}")" review-child "$r" "$prov" "" "${ISSUE_ARG:-$PR_ARG}" "$RUN_ID"
+  fi
   # shellcheck disable=SC2086
-  "$REPO_ROOT/scripts/agent.sh" $agent_args <"$ART/$r.ctx" >"$ART/$r.out" 2>"$ART/$r.err" &
+  AGENT_USAGE_FILE="$ART/$r.usage" "$REPO_ROOT/scripts/agent.sh" $agent_args <"$ART/$r.ctx" >"$ART/$r.out" 2>"$ART/$r.err" &
   pids[$idx]="$!"
   names[$idx]="$r"
   idx=$((idx + 1))
@@ -170,6 +192,20 @@ while [ "$k" -lt "$idx" ]; do
   echo "$rc" >"$ART/$r.rc"
   k=$((k + 1))
 done
+
+# Materialize each reviewer child run: copy its context/stdout/stderr into the
+# child directory and finalize its metadata (status, exit, duration, usage).
+if telemetry_enabled; then
+  for r in $REVIEWERS; do
+    cdir="$(telemetry_run_dir "${RUN_ID}-${r}")"
+    cp -f "$ART/$r.ctx" "$cdir/prompt.txt" 2>/dev/null || true
+    cp -f "$ART/$r.out" "$cdir/stdout.txt" 2>/dev/null || true
+    cp -f "$ART/$r.err" "$cdir/stderr.txt" 2>/dev/null || true
+    crc="$(cat "$ART/$r.rc" 2>/dev/null || echo 1)"
+    cstatus="success"; [ "$crc" -eq 0 ] || cstatus="failed"
+    tel telemetry_finalize_run "$cdir" "$cstatus" "$crc" "" "" "$ART/$r.usage"
+  done
+fi
 
 # Pull the reviewer's verdict line, tolerant of markdown emphasis (e.g. **VERDICT: PASS**)
 # and leading prose. Returns the cleaned text after "VERDICT:", or empty if none.
@@ -209,12 +245,41 @@ done
 
 echo
 log "verdict summary"
+SUMMARY=""
 for r in $REVIEWERS; do
   rc="$(cat "$ART/$r.rc" 2>/dev/null || echo '?')"
   v="$(extract_verdict "$ART/$r.out")"
   [ -z "$v" ] && v="<no verdict> (exit $rc)"
   printf '  %-22s %s\n' "$r" "$v"
+  SUMMARY="$SUMMARY- \`$r\`: $v
+"
 done
+
+# Finalize the parent run (in dry-run too, so the record always exists) and
+# optionally post a single scrubbed, bounded summary comment. Never post the four
+# reviewers' output separately, and never post raw artifacts or identifiers.
+if telemetry_enabled; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    pstatus="dry-run"; pexit=0
+  elif [ "$fail" -eq 1 ]; then
+    pstatus="changes-needed"; pexit=3
+  else
+    pstatus="passed"; pexit=0
+  fi
+  tel telemetry_finalize_run "$RUN_DIR" "$pstatus" "$pexit" "" "" ""
+  log "review run recorded: .agents/runs/$RUN_ID (status=$pstatus)"
+
+  post_review_comment() {
+    local kind="$1" target="$2" body
+    body="$(printf '🔎 **Review panel: %s** for `%s`\n\n%s\n_Scrubbed verdict summary (run `%s`). Full reviewer output and shared plan/scan artifacts stay in the local git-ignored run store._' \
+      "$pstatus" "$ROOT" "$SUMMARY" "$RUN_ID" | telemetry_scrub)"
+    gh "$kind" comment "$target" --body "$body" >/dev/null
+  }
+  if [ "$DRY_RUN" -ne 1 ]; then
+    [ -n "$ISSUE_ARG" ] && tel post_review_comment issue "$ISSUE_ARG"
+    [ -n "$PR_ARG" ]    && tel post_review_comment pr "$PR_ARG"
+  fi
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "dry-run: no agents were actually invoked"

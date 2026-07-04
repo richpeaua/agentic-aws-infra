@@ -22,3 +22,8 @@ override.tf.json
 # Infracost
 .infracost/
 infracost.json
+
+# Local headless-agent run store may contain sensitive prompts, stdout/stderr,
+# and Terraform plan output. Keep the records local; never commit them.
+# The warning doc (.agents/README.md) is tracked; the run records are not.
+.agents/runs/
