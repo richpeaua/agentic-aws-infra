@@ -34,10 +34,24 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 These bind every role.
 
 - No local `apply` or `destroy` of application stacks. Ever.
-- Every application change goes through a pull request. No direct pushes to `main` for infrastructure changes once the pipeline is live.
+- Every repository change goes through a purpose-named branch and a pull request.
+  No direct pushes to `main`.
 - Never commit account IDs, bucket names, role ARNs, or emails. See "Secrets and scrubbing".
 - Do not weaken a blocking gate or a branch protection rule to make a change pass. Fix the change.
 - The implementer runs the review panel before opening a PR.
+
+## Token discipline
+
+This file is always loaded, so every agent must keep context usage intentional.
+
+- Read only the role file, skill, status file, issue, and source files needed for the current task.
+- Prefer targeted commands over broad recursive discovery.
+  For example, inspect `~/.claude/skills` directly instead of listing all of `~/.claude`.
+- Bound command output with focused paths, `rg`, `find -maxdepth`, `head`, `sed -n`, or tool output limits.
+- Do not paste large logs, plans, Terraform output, dependency trees, or directory listings into the conversation unless the details are needed for a decision.
+- Summarize repetitive output and quote only the lines that matter.
+- Load `DESIGN.md`, `docs/ci.md`, role files, and long references only when the task needs them.
+- When spawning specialist agents, give each one the narrowest prompt and file set that can answer the question.
 
 ## Secrets and scrubbing (public repo)
 
@@ -50,8 +64,9 @@ These bind every role.
 ## Branches and pull requests
 
 - Branch names: `<type>/<scope>`, where type is `feat`, `fix`, `chore`, `ci`, or `docs` (for example `feat/sqs-queue`).
-- One logical change per PR, mapping to one issue. Fill in the pull request template completely.
-- Never push infrastructure changes directly to `main` once the pipeline is live. Use a PR.
+- Every change to this repository must be made on a branch whose name captures the change and must enter `main` through a pull request.
+- One logical change per PR, mapping to one issue when an issue exists. Fill in the pull request template completely.
+- Never push directly to `main`.
 - A human reviews and merges the PR. Merge is the single deploy approval; after it, CI applies dev then prod automatically (the inter-environment gate is automated). There is no second human approval before prod.
 
 ## Writing and commit conventions
