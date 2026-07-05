@@ -41,6 +41,7 @@ These bind every role.
 - The implementer runs the review panel before opening a PR.
 - Scripting and coding tasks belong to the implementer.
   Use Bash or Python only for repository automation and helper code, and prefer Bash unless Python is clearly simpler or more robust.
+  Temporary bootstrap exception: while the implementer handoff itself is broken, the orchestrator may author the narrowly scoped tooling changes that repair it, under the same branch, pull request, review, and secret-scan rules. See the bootstrap exception in `.claude/agents/orchestrator.md`.
 
 ## Token discipline
 
