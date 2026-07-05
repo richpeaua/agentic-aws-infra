@@ -3,7 +3,7 @@
 *Audience: read when you need the "why" - the authoritative design and rationale behind the rules.*
 
 This document is the authoritative specification for the workflow.
-It is written to be consumed by a Claude Code agent.
+It is written to be consumed by an AI coding agent.
 Read it fully before authoring, planning, or provisioning anything.
 For the load-bearing terms it uses (root, stack, gate, the panel, the loop, and so on), see [`docs/glossary.md`](./docs/glossary.md).
 
@@ -78,7 +78,7 @@ This keeps every agent's context lean and is why the work is decomposed into an 
 - Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, launches the implementer with `scripts/implement.sh`, and manages the specialist agents and the loop to completion. It does not author, plan, or apply Terraform.
 - Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a headless writable session. It does not apply application stacks.
 - Review panel: four read-only reviewers (Security, Compliance, Cost, Correctness), defined in `.claude/agents/` and launched as independent, provider-agnostic agents via `scripts/review.sh` to critique the draft before the PR.
-- CLIs: the agents run on Claude Code (`claude`) and OpenAI Codex (`codex`), interchangeably per `scripts/agent.sh`, so load spreads across providers.
+- CLIs: the agents run on interchangeable AI coding CLIs, selected per run by `scripts/agent.sh`, so load spreads across providers.
 - CI: GitHub Actions. It runs the gates on PRs and performs applies via short-lived OIDC credentials.
 
 ## End-to-end loop
@@ -167,12 +167,12 @@ Parallelism belongs in review, not authoring: there is a single author (the impl
 ### Independent, provider-agnostic agents
 
 The specialists run as independent processes, not in-session subagents.
-`scripts/agent.sh` launches any agent definition headlessly on either backend - Claude Code or OpenAI Codex - by feeding the agent's markdown body as a portable rubric, so one definition runs on either provider.
+`scripts/agent.sh` launches any agent definition headlessly on any supported CLI backend by feeding the agent's markdown body as a portable rubric, so one definition runs on any provider.
 `scripts/review.sh` spreads the four reviewers across providers, so a review draws on more than one token budget and is not bottlenecked on a single account.
 Because the specialists are independent processes rather than nested subagents, there is no subagent-nesting limit to work around.
 
 The implementer is launched separately, in a writable mode reserved for it and constrained at the launcher: it grants only the scoped tools needed to author a PR and denies `terraform apply` and `terraform destroy` outright.
-Identifier-bearing implementer runs default to Claude, because Terraform plans and local tool output can contain account IDs, bucket names, role ARNs, and emails that this public repo forbids committing; Codex is opt-in per run once the operator accepts that data boundary.
+Identifier-bearing implementer runs default to the launcher's primary provider, because Terraform plans and local tool output can contain account IDs, bucket names, role ARNs, and emails that this public repo forbids committing; any additional provider is opt-in per run once the operator accepts that data boundary.
 The exact tool allowlist and the opt-in switch live with the launcher; see [`scripts/README.md`](./scripts/README.md).
 
 ### Precompute once, reason many
@@ -271,7 +271,7 @@ Each major directory carries a local README with its own conventions - `scripts/
 
 The operating rules for agents live in [`AGENTS.md`](./AGENTS.md), the authoritative tool-neutral reference.
 `AGENTS.md` is the "what to do"; this document is the "why".
-Claude Code auto-loads them via `CLAUDE.md`, which imports `AGENTS.md`.
+Agent CLIs auto-load them via `CLAUDE.md`, which imports `AGENTS.md`.
 
 ## Manual prerequisites (human, performed once)
 
