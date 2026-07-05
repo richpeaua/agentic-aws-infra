@@ -92,11 +92,12 @@ This file is always loaded, so every agent must keep context usage intentional.
 - `DESIGN.md` - authoritative design and rationale.
 - `docs/ci.md` - CI configuration contract (environment, variable, and secret names).
 - `docs/troubleshooting.md` - known failure modes and fixes.
+- `docs/observability.md` - headless run records, the `scripts/runs.sh` viewer, and scrubbed issue/PR comments.
 - `.claude/agents/orchestrator.md` - the orchestrator (PM) role.
 - `.claude/agents/implementer.md` - the implementer (builder) role.
 - `.claude/agents/` - also the review-panel reviewers (security, compliance, cost, correctness), launched as independent agents.
 - `.claude/skills/provision-aws/SKILL.md` - the implementer's playbook: procedure, Terraform conventions, command surface, Definition of Done.
-- `scripts/` - the command surface shared by local work and CI, including `agent.sh` (launch one specialist on Claude or Codex) and `review.sh` (run the whole panel).
+- `scripts/` - the command surface shared by local work and CI, including `agent.sh` (launch one specialist on Claude or Codex), `review.sh` (run the whole panel), and `runs.sh` (inspect headless run records).
 - `templates/stack/` - the canonical stack template used by the scaffolder.
 - `foundation/` - state backend and GitHub OIDC roles (laptop-applied).
 - `modules/` - reusable modules. `stacks/<name>/{dev,prod}/` - per-environment roots.

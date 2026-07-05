@@ -25,6 +25,7 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 - No long-lived cloud credentials: local work uses AWS SSO, CI uses GitHub OIDC.
 - Tiered gates: formatting, linting, security scanning, and custom compliance policy as code; cost is advisory.
 - Multi-agent review shifts quality left, before the PR; CI remains the authoritative backstop.
+- Observable runs: every headless agent run writes a durable local record and a scrubbed issue/PR comment, inspectable with `scripts/runs.sh`; see [`docs/observability.md`](./docs/observability.md).
 - Dev and prod environments in a single dedicated account, separated by directory-per-environment plus a shared module.
 
 ## Repository layout
@@ -35,12 +36,14 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
   settings.json      local apply/destroy blocked for application stacks
   agents/            orchestrator (PM), implementer, and the four reviewers
   skills/provision-aws/   the implementer's operating procedure
-scripts/             command surface: check/plan/lock/scan + agent.sh, review.sh
+scripts/             command surface: check/plan/lock/scan + agent/implement/review/runs.sh
+.agents/runs/        git-ignored durable records of headless agent runs
 foundation/          state backend + GitHub OIDC provider and roles (laptop-applied)
 modules/             reusable Terraform modules
 stacks/<name>/       per-stack thin roots: dev/ and prod/
 policy/              Conftest/OPA compliance policies and Checkov config
 tests/               post-apply smoke tests
+docs/                status, CI contract, observability, troubleshooting
 DESIGN.md            authoritative design specification
 ```
 
