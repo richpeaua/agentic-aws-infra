@@ -3,6 +3,7 @@
 This document is the authoritative specification for the workflow.
 It is written to be consumed by a Claude Code agent.
 Read it fully before authoring, planning, or provisioning anything.
+For the load-bearing terms it uses (root, stack, gate, the panel, the loop, and so on), see [`docs/glossary.md`](./docs/glossary.md).
 
 This is version 2 of the design.
 Version 1 established a laptop-driven, human-gated, local-apply workflow.
