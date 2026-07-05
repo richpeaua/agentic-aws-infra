@@ -1,5 +1,7 @@
 # Build status
 
+*Audience: read first to orient - the current build state and deployed footprint.*
+
 Single in-repo source of truth for where the build is.
 Keep it current: update this file whenever a phase completes, an issue changes a checkbox state, or the deployed footprint changes. It should never describe completed work as still pending.
 Detailed phase specs are the GitHub issues (initial-build epic: #8; v2 handoff-hardening epic: #33; model-routing epic: #45).

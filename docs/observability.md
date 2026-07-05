@@ -1,5 +1,7 @@
 # Headless run observability
 
+*Audience: inspecting or debugging headless agent runs - what is recorded and how to view it.*
+
 Lightweight, local-first observability for the headless multi-agent workflow
 (`scripts/implement.sh`, `scripts/review.sh`, `scripts/agent.sh`).
 It gives durable run records, a viewer, and scrubbed GitHub issue/PR comments, without

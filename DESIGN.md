@@ -1,5 +1,7 @@
 # DESIGN: Production-Grade Agentic AWS Infrastructure Workflow
 
+*Audience: read when you need the "why" - the authoritative design and rationale behind the rules.*
+
 This document is the authoritative specification for the workflow.
 It is written to be consumed by a Claude Code agent.
 Read it fully before authoring, planning, or provisioning anything.

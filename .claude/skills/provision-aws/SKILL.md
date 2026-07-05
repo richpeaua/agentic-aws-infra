@@ -29,7 +29,7 @@ Run the loop autonomously: scaffold, author, check, plan, review panel, and open
 
 1. Understand the issue. Ask clarifying questions only if genuinely blocked; otherwise proceed.
 2. Scaffold or edit the stack:
-   - New stack: `scripts/new-stack.sh <name>` generates the module and dev/prod roots from the template.
+   - New stack: `scripts/new-stack.sh <name>` generates the module and dev/prod roots from the template. Mirror `stacks/static-site`, the canonical reference stack, for a complete known-good shape.
    - Existing stack: edit the module in `modules/<name>/`.
 3. Author the resources in `modules/<name>/`, following the Terraform conventions below (base names on `local.name`; append `var.account_id` for globally-unique names; `default_tags` live in the root).
 4. Verify locally with the tools CI uses:
@@ -53,7 +53,7 @@ The orchestrator runs `scripts/implement.sh <issue> --findings <file>` with the 
 - Modules: prefer pinned community modules (`terraform-aws-modules/*`) for complex infrastructure; raw resources for simple things. Always pin module and provider versions.
 - Region: default `us-east-1`.
 - Terraform version: pinned via `.terraform-version` (currently 1.15.7, minimum 1.10 for the native S3 lockfile).
-- Commit `.terraform.lock.hcl`. Include both `linux_amd64` (CI) and `darwin_arm64` (local) hashes: `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` (or `scripts/lock.sh <root>`).
+- Commit `.terraform.lock.hcl`. Include both `linux_amd64` (CI) and `darwin_arm64` (local) hashes: `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` (or `scripts/lock.sh <root>`). If CI later fails on a checksum/platform error, see [troubleshooting: checksum/platform error](../../../docs/troubleshooting.md#ci-fails-on-terraform-init-with-a-checksumplatform-error).
 
 ## Review panel
 

@@ -1,5 +1,7 @@
 # Agentic AWS Infrastructure Workflow
 
+*Audience: start here - what this repo is and how the end-to-end workflow runs.*
+
 A production-minded workflow where a Claude Code agent authors Terraform, a multi-agent panel reviews it, and a GitOps pipeline applies it through automated quality, security, and compliance gates.
 
 The full specification lives in [`DESIGN.md`](./DESIGN.md).

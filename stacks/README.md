@@ -3,6 +3,9 @@
 Application stacks: the infrastructure CI applies.
 An agent never runs `terraform apply`/`destroy` here - if a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 
+**Reference stack:** `stacks/static-site` is the canonical, known-good implementation to mirror when authoring a new stack.
+The scaffolder (`scripts/new-stack.sh`) produces the skeleton; `static-site` shows the complete shape - module plus thin `dev`/`prod` roots, tagging, naming, backend wiring, and a deliberate public-access waiver - so copy its structure rather than inventing one.
+
 ## Layout: shared module + thin per-environment roots
 
 Each stack is a reusable module in `modules/<name>/`, consumed by two thin roots:

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+*Audience: when something breaks - known failure modes and their fixes. Check here before improvising.*
+
 Known failure modes and how to handle them, so agents do not rediscover them differently each time.
 
 ## Terraform state and backend
@@ -27,6 +29,7 @@ Use `terraform init -reconfigure -backend-config=backend.tfbackend` when the bac
 The lock file was generated on macOS only.
 Record hashes for both platforms and commit the result:
 `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`.
+See also the lockfile step in the [`provision-aws` skill's Terraform conventions](../.claude/skills/provision-aws/SKILL.md#terraform-conventions).
 
 ## Infracost
 
@@ -63,6 +66,8 @@ Run the static checks (fmt, validate, tflint, Checkov on HCL) on fork PRs and sk
 ### Checkov gate does not block a clearly-bad resource
 
 Do not use `soft-fail: true` with `hard-fail-on: [HIGH, CRITICAL]`. Open-source Checkov (without a Bridgecrew/Prisma API key) does not attach severity metadata to findings, so severity-based gating never matches and the gate exits 0 on everything, including a wide-open security group. The gate is configured to block on any finding instead; accept exceptions with an inline `#checkov:skip=CKV_AWS_ID:reason`. Verify enforcement with a throwaway bad resource: `checkov` must exit non-zero.
+
+See also: the block-on-any-finding rule in [`policy/README.md`](../policy/README.md#checkov-checkov), and how the review panel first caught this trap in [`learnings/multi-agent-review-panel.md`](../learnings/multi-agent-review-panel.md#the-moment-it-paid-off).
 
 ## Shell
 

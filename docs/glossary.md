@@ -1,5 +1,7 @@
 # Glossary
 
+*Audience: any time a term is unclear - the repo's shared vocabulary in one place.*
+
 The repository's load-bearing terms, each with one authoritative home.
 This is a lookup, not a second design doc: definitions are short and point to where the term is defined and used in full.
 When a definition and its source ever disagree, the source wins - fix the glossary.

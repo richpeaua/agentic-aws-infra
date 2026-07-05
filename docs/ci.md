@@ -1,5 +1,7 @@
 # CI configuration contract
 
+*Audience: configuring or debugging CI - the GitHub contract and the pipeline job graph.*
+
 This documents the GitHub configuration the workflows depend on.
 Values live in GitHub, never in the repo.
 Workflows must reference these exact names.
