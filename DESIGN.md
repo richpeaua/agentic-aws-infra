@@ -60,44 +60,16 @@ Neither the orchestrator nor the implementer runs `terraform apply` or `terrafor
 
 ## Foundations
 
-### IaC tool
-
-Terraform, pinned via `.terraform-version` (currently 1.15.7, minimum 1.10 for the native S3 lockfile).
-
-### State backend
-
-State lives in a versioned, encrypted S3 bucket.
-Locking uses the native S3 lockfile (`use_lockfile = true`). DynamoDB is not used.
-Each root has its own state key: `foundation/<name>/terraform.tfstate` and `stacks/<name>/<env>/terraform.tfstate`.
-
-### Authentication
-
-- Local (authoring, plan, foundational apply): AWS IAM Identity Center via `aws sso login`, profile `aws-infra`. Short-lived credentials, no long-lived keys on disk.
-- CI (application apply): GitHub OIDC. No stored AWS keys at all.
-
-### Account and blast radius
-
-A single dedicated AWS account is the blast-radius boundary.
-The account ID is referenced only via variables and CI configuration, never hardcoded in committed code.
-Dev and prod are logically separated within this one account.
-Permission sets and CI roles carry `AdministratorAccess`; the account boundary plus the gates and human approvals are the real guards.
-
-### Region and tagging
-
-Default region `us-east-1`.
-Every resource is tagged via the provider `default_tags` block with `Project`, `Stack`, `Environment`, and `ManagedBy = "terraform"`.
-Resource names include the environment to avoid collisions between dev and prod in the shared account.
+- **IaC tool**: Terraform, pinned via `.terraform-version` (currently 1.15.7, minimum 1.10 for the native S3 lockfile).
+- **State backend**: a versioned, encrypted S3 bucket with native S3 lockfile locking (`use_lockfile = true`, no DynamoDB), one state key per root. Provisioned as a foundational stack - the mechanics are in [`foundation/README.md`](./foundation/README.md).
+- **Authentication**: local work (authoring, plan, foundational apply) uses AWS IAM Identity Center via `aws sso login` (profile `aws-infra`, short-lived credentials, no keys on disk); CI application applies use GitHub OIDC (no stored AWS keys at all).
+- **Account and blast radius**: a single dedicated AWS account is the blast-radius boundary, with dev and prod logically separated inside it. The account ID is referenced only via variables and CI configuration. Permission sets and CI roles carry `AdministratorAccess`; the account boundary plus the gates and approvals are the real guards.
+- **Region and tagging** conventions live with the stacks that apply them; see [`stacks/README.md`](./stacks/README.md).
 
 ## CI identity: GitHub OIDC roles
 
-An OIDC provider and three IAM roles are provisioned as a foundational stack and applied from the laptop.
-All role trust policies are pinned to `repo:richpeaua/<repo>` and further scoped by claim:
-
-- Read-only role: assumed by PR plan jobs. Trust condition on `:pull_request`. Read and plan permissions only.
-- Dev apply role: `AdministratorAccess`. Trust condition on `:environment:dev`.
-- Prod apply role: `AdministratorAccess`. Trust condition on `:environment:production`.
-
-Because the apply roles are assumable only from their GitHub Environments, they cannot be assumed from a PR job or a fork.
+CI assumes short-lived, keyless AWS credentials through an OIDC provider and three IAM roles - read-only for PR plans, dev-apply, and prod-apply - each trust-scoped by GitHub claim so an apply role cannot be assumed from a PR job or a fork.
+These are a foundational stack; the role-by-role detail lives in [`foundation/README.md`](./foundation/README.md).
 
 ## Gate stack and enforcement
 
@@ -107,11 +79,12 @@ Every PR runs the full stack. Enforcement is tiered so that signal stays high.
 | --- | --- | --- |
 | `terraform fmt`, `validate` | Formatting and syntax | Blocks merge |
 | `tflint` | AWS-aware linting and provider misconfig | Blocks merge on errors |
-| Checkov | Security scanning of the Terraform HCL (CIS and best practice) | Blocks on any finding. Open-source Checkov has no severity metadata, so severity-based gating silently never fires; instead every finding is fixed or explicitly waived inline with a documented `#checkov:skip` reason |
+| Checkov | Security scanning of the Terraform HCL (CIS and best practice) | Blocks on any finding; every finding is fixed or explicitly waived |
 | Conftest / OPA | Custom compliance policy as code, written in Rego (required tags, allowed regions, no public buckets unless explicitly flagged, naming standards) | Blocks merge on any deny |
 | Infracost | Monthly cost delta | Advisory only, never blocks |
 
 Blocking gates are configured as required status checks in branch protection.
+The policy-authoring detail (the Rego rules and the Checkov waiver convention) lives in [`policy/README.md`](./policy/README.md); the CI wiring is in [`docs/ci.md`](./docs/ci.md).
 
 ## Multi-agent review panel
 
@@ -172,16 +145,15 @@ The operational reference - exactly what is recorded, the viewer commands, and t
 
 ## Environments
 
-Dev and prod coexist in the one account and are separated logically.
+Dev and prod coexist in the one account, separated logically by a directory-per-environment layout over a shared module (the mechanism is in [`stacks/README.md`](./stacks/README.md)).
 
-- Mechanism: directory-per-environment with a shared module. Each stack is a reusable module in `modules/<name>/`. Thin roots at `stacks/<name>/dev/` and `stacks/<name>/prod/` consume the module, each with its own backend key and `<env>.tfvars`.
 - GitHub Environments: `dev` (light or no gate) and `production` (no required reviewer; a deployment-branch policy restricts it to `main`, and it scopes the prod apply role). The `production` environment is retained for that scoping and branch policy, not for a human gate.
 - Promotion: a single PR. On merge, CI applies dev and runs dev smoke tests, then automatically applies prod. The gate between environments is automated - the prod apply depends on the dev apply job, so a failed dev apply or dev smoke test blocks prod. No human approval sits between dev and prod; the PR merge is the single deploy approval, and it is reversible by re-adding a required reviewer to the `production` environment.
 
 ## QA and testing
 
-- Module tests: native `terraform test` in HCL, no Go toolchain. Thin now, grows as modules gain logic.
-- Post-apply smoke tests: after each apply, the pipeline verifies the deployed resources actually work (for example, curl a website endpoint, assert outputs resolve, check resource health). Failures fail the deployment and alert.
+Three layers: native `terraform test` module tests, post-apply smoke tests that verify deployed resources actually work (a failure fails the deployment), and shell/unit tests for the repo's own tooling.
+Where each lives and how to run them is in [`tests/README.md`](./tests/README.md).
 
 ## Drift detection
 
@@ -202,47 +174,10 @@ This catches out-of-band changes made outside the pipeline.
 - CI: GitHub secrets and variables hold the account ID, role ARNs, state bucket, region, budget email, and the Infracost API key.
 - The `.gitignore` excludes `terraform.tfvars`, `*.auto.tfvars`, `*.tfbackend`, `*.tfstate*`, `tfplan`, and `.terraform/`.
 
-## Repository skeleton (target)
+## Repository layout
 
-```
-.github/
-  workflows/
-    pr-checks.yml     # plan + tflint + checkov + conftest + infracost on PRs
-    deploy.yml        # on merge: apply dev -> smoke -> (auto) apply prod -> smoke
-    drift.yml         # scheduled drift detection
-.claude/
-  settings.json       # local apply/destroy blocked for application stacks; plan/scan allowed
-  agents/             # orchestrator (PM), implementer, and the four reviewers (independent agents)
-  skills/provision-aws/   # the implementer's playbook: author -> panel -> PR (no local apply)
-scripts/
-  implement.sh        # orchestrator entry point for a constrained writable implementer
-  agent.sh            # launch one specialist (Claude or Codex) from one portable rubric
-  review.sh           # the review panel: precompute once, spread across providers
-  runs.sh             # viewer for headless run records (list / show / clean)
-  lib/telemetry.sh    # run-record and scrubbing helpers (opt-out via AGENTS_TELEMETRY)
-.agents/
-  runs/               # git-ignored: durable headless run records (never committed)
-foundation/
-  state-backend/      # S3 state bucket + AWS Budget (laptop-applied)
-  github-oidc/        # OIDC provider + read, dev-apply, prod-apply roles (laptop-applied)
-modules/
-  static-site/        # reusable module (was the stack)
-stacks/
-  static-site/
-    dev/              # thin root: module + dev.tfvars + backend key
-    prod/             # thin root: module + prod.tfvars + backend key
-policy/
-  conftest/           # Rego compliance policies
-  checkov/            # Checkov config and suppressions
-tests/                # smoke test scripts
-docs/
-  status.md           # current build state
-  observability.md    # headless run observability reference
-  ci.md               # CI configuration contract
-  troubleshooting.md  # known failure modes and fixes
-DESIGN.md
-README.md
-```
+The annotated directory tree is the ["Repository layout" section of the README](./README.md#repository-layout).
+Each major directory carries a local README with its own conventions - `scripts/`, `policy/`, `foundation/`, `stacks/`, `modules/`, and `tests/` - so operational detail lives next to the code it governs rather than here.
 
 ## Agent operating rules
 
@@ -259,13 +194,5 @@ Claude Code auto-loads them via `CLAUDE.md`, which imports `AGENTS.md`.
 
 ## Build phases
 
-The maturation is built and reviewed one phase at a time.
-
-1. Repo and scrub: git init, parameterize the backend, create the GitHub repo, push.
-2. Foundation: rename bootstrap to `foundation/state-backend`; add `foundation/github-oidc` (OIDC provider plus three roles); apply from the laptop.
-3. GitHub configuration: Environments, secrets and variables, branch protection.
-4. Gates and policy: CI workflows, `tflint`, Checkov config, Conftest Rego policies.
-5. Agent panel and skill rewrite: define the four reviewers; update `provision-aws` to author, review, and open PRs without local apply.
-6. Refactor static-site into a module plus dev and prod roots.
-7. End-to-end validation: destroy the current demo static-site and re-provision it through the pipeline.
-8. QA layer: post-apply smoke tests and native `terraform test`.
+The maturation was built and reviewed one phase at a time; all phases are complete.
+The current build state and footprint are tracked in [`docs/status.md`](./docs/status.md).
