@@ -1,6 +1,11 @@
 <!--
 Keep this structure. It makes every change reviewable and auditable the same way.
 Delete the HTML comments before submitting.
+
+For a docs-only or non-infrastructure change (no Terraform authored), use the
+"Docs / non-infra changes" variant at the bottom instead of the Terraform
+sections, and delete the Terraform sections (Plan, Cost, Review panel findings,
+and the infrastructure Definition of Done).
 -->
 
 ## Summary
@@ -48,3 +53,19 @@ Monthly cost delta:
 - [ ] `default_tags` present; environment included in resource names.
 - [ ] Provider and module versions pinned; lock file has linux + darwin hashes.
 - [ ] No local apply of an application stack (apply happens in CI).
+
+<!--
+====================================================================
+Docs / non-infra changes variant
+Use this INSTEAD of Plan / Cost / Review panel findings / the Definition of
+Done above when no Terraform is authored (docs, scripts, CI, tooling). Delete
+the Terraform-only sections and keep the checklist below.
+====================================================================
+-->
+
+## Definition of Done (docs / non-infra)
+
+- [ ] `scripts/scan-secrets.sh` clean; no account IDs, buckets, ARNs, or emails committed.
+- [ ] Relative links and section anchors in changed docs resolve.
+- [ ] No net information loss: moved content has a single, findable home.
+- [ ] No infrastructure change (no `terraform apply`/`destroy`); Terraform sections above removed as N/A.

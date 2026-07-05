@@ -88,22 +88,15 @@ This file is always loaded, so every agent must keep context usage intentional.
 
 ## Where things live
 
+Top-level references (no directory README covers these):
+
 - `docs/status.md` - current build state. Read first.
-- `DESIGN.md` - authoritative design and rationale.
+- `DESIGN.md` - authoritative design and rationale (the "why").
 - `docs/ci.md` - CI configuration contract (environment, variable, and secret names).
 - `docs/troubleshooting.md` - known failure modes and fixes.
 - `docs/observability.md` - headless run records, the `scripts/runs.sh` viewer, and scrubbed issue/PR comments.
-- `.claude/agents/orchestrator.md` - the orchestrator (PM) role.
-- `.claude/agents/implementer.md` - the implementer (builder) role.
-- `.claude/agents/` - also the review-panel reviewers (security, compliance, cost, correctness), launched as independent agents.
+- `.claude/agents/` - the orchestrator (PM), implementer, and the four review-panel reviewers, each launched as an independent agent.
 - `.claude/skills/provision-aws/SKILL.md` - the implementer's playbook: procedure, Terraform conventions, command surface, Definition of Done.
-- `scripts/` - the command surface shared by local work and CI, including `agent.sh` (launch one specialist on Claude or Codex), `review.sh` (run the whole panel), and `runs.sh` (inspect headless run records).
-- `templates/stack/` - the canonical stack template used by the scaffolder.
-- `foundation/` - state backend and GitHub OIDC roles (laptop-applied).
-- `modules/` - reusable modules. `stacks/<name>/{dev,prod}/` - per-environment roots.
-- `policy/` - Conftest/OPA compliance policies and Checkov config.
-- `tests/` - post-apply smoke tests.
-- `.github/workflows/` - CI (PR checks, deploy, drift).
 
-Each of `scripts/`, `policy/`, `foundation/`, `stacks/`, `modules/`, and `tests/` carries a local `README.md` with that directory's conventions.
-When working in one, read its README rather than the whole of `DESIGN.md`.
+Each of `scripts/`, `foundation/`, `modules/`, `stacks/`, `policy/`, and `tests/` carries a local `README.md` with that directory's conventions; when working in one, read its README rather than the whole of `DESIGN.md`.
+`templates/stack/` is the scaffolder template, and `.github/workflows/` holds CI (contract in `docs/ci.md`).
