@@ -104,3 +104,6 @@ This file is always loaded, so every agent must keep context usage intentional.
 - `policy/` - Conftest/OPA compliance policies and Checkov config.
 - `tests/` - post-apply smoke tests.
 - `.github/workflows/` - CI (PR checks, deploy, drift).
+
+Each of `scripts/`, `policy/`, `foundation/`, `stacks/`, `modules/`, and `tests/` carries a local `README.md` with that directory's conventions.
+When working in one, read its README rather than the whole of `DESIGN.md`.
