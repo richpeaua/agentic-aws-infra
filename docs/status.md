@@ -2,9 +2,13 @@
 
 Single in-repo source of truth for where the build is.
 Update this when a phase completes or the deployed footprint changes.
-Detailed phase specs are the GitHub issues (epic: #8).
+Detailed phase specs are the GitHub issues (initial-build epic: #8; v2 handoff-hardening epic: #33).
 
 ## Phases
+
+### Initial build - GitOps pipeline
+
+The end-to-end GitOps pipeline: foundation, gates, deploy, and QA, built and validated live.
 
 - [x] Phase 1 - Repo and scrub (DESIGN v2, README, LICENSE, AGENTS.md).
 - [x] Phase 2 - Foundation: `foundation/state-backend` and `foundation/github-oidc` applied (OIDC provider + read/dev-apply/prod-apply roles).
@@ -14,6 +18,16 @@ Detailed phase specs are the GitHub issues (epic: #8).
 - [x] Phase 6 - Refactor static-site into module + dev/prod roots (#5). Merged #10. Old v1 demo destroyed. First stack validated through the full gate pipeline (surfaced and fixed the read-role + native-lockfile issue via `-lock=false`).
 - [x] Phase 7 - Deploy pipeline + end-to-end validation (#6). `deploy.yml` applies dev -> smoke -> prod -> smoke. The dev->prod gate is automated (a failed dev apply or dev smoke blocks prod); the single human approval is the PR merge (#18). Validated: dev and prod static-site both deployed through CI and live (HTTP 200).
 - [x] Phase 8 - QA layer: native `terraform test` for modules (mock provider, in pr-checks), post-apply smoke tests (`scripts/smoke.sh` in deploy), scheduled `drift.yml` (nightly plan, files a drift issue). deploy now only applies roots with a real plan diff (#7).
+
+### v2 - maturing the agentic workflow
+
+With the pipeline live, v2 matures the agent workflow itself: cheaper gates, a cleaner role split, a real headless implementer handoff, run observability, and hardening of that handoff. No change to the deployed AWS footprint.
+
+- [x] v2.1 - Pipeline and review-panel efficiency: PR merge streamlined to the single deploy approval (#21); review panel made cost-efficient via precompute-once shared artifacts, reasoning-only reviewers, and risk-gating (#20).
+- [x] v2.2 - Agent architecture: split into orchestrator (PM) and implementer roles with a slimmed, always-loaded `AGENTS.md` (#22); provider-agnostic launcher runs the review panel as independent Claude/Codex processes (#23).
+- [x] v2.3 - Headless implementer handoff: branch/PR workflow required of every agent (#25); `scripts/implement.sh` writable implementer launcher (#26) with an expanded coding mandate (#27); Codex/Claude config parity (#40).
+- [x] v2.4 - Run observability: durable local run records under `.agents/runs/`, the `scripts/runs.sh` viewer, scrubbed issue/PR comments, and best-effort token usage (#30, #32); documented at the architecture level in DESIGN/README/AGENTS (#43).
+- [ ] v2.5 - Handoff hardening and cost controls (epic #33, in progress): widened writable allowlist for repo-owned verification (#34, merged); truthful `success`/`failed`/`incomplete` finalization (#35, merged); runtime/budget guards (#36); live progress and usage visibility (#37); safe GitHub body construction and permission/guard docs (#38).
 
 ## Deployed footprint
 
