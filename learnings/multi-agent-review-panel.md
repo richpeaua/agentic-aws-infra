@@ -69,6 +69,8 @@ But open-source Checkov, without a platform API key, does not reliably attach se
 If nothing is labeled HIGH, then a rule that says "block on HIGH" blocks nothing.
 The gate could be passing security findings it was explicitly designed to stop, and every green check mark would look exactly the same as a real pass.
 
+This trap is now documented where it is actionable: [`policy/README.md`](../policy/README.md#checkov-checkov) states the block-on-any-finding rule, and [`docs/troubleshooting.md`](../docs/troubleshooting.md#checkov-gate-does-not-block-a-clearly-bad-resource) records the fix.
+
 That is a latent hole in a security control, discovered by reading the control's configuration and reasoning about what it would actually do, not by running it.
 A scanner cannot find that class of bug, because the scanner is the thing with the bug.
 It took a reviewer whose job is to think about security, not just execute security checks.

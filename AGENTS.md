@@ -1,5 +1,7 @@
 # AGENTS.md
 
+*Audience: every agent, on every task (always loaded) - the universal guardrails.*
+
 The universal operating rules for any agent working in this repository.
 This file is always loaded (via `CLAUDE.md`), so it is kept small and tool-neutral: only the guardrails that bind *every* role.
 Role-specific procedure lives elsewhere and loads only when needed - this is deliberate, to keep each agent's context lean.

@@ -31,6 +31,8 @@ The gate **blocks on any failed check**. Open-source Checkov attaches no severit
 
 Do not add a blanket skip to make a change pass; fix the change or waive the specific finding with a documented reason.
 
+See also: the [troubleshooting entry](../docs/troubleshooting.md#checkov-gate-does-not-block-a-clearly-bad-resource) for why severity-based gating is avoided, and the [review-panel learning](../learnings/multi-agent-review-panel.md#the-moment-it-paid-off) that surfaced the trap.
+
 ## Adding a policy
 
 1. Add the rule to `terraform.rego` (Conftest) or a targeted `#checkov:skip` / justified `skip-check` entry (Checkov).
