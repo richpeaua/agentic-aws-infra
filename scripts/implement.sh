@@ -7,6 +7,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 source "$REPO_ROOT/scripts/lib/telemetry.sh"
+source "$REPO_ROOT/scripts/lib/implementer.sh"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -157,10 +158,17 @@ if telemetry_enabled; then
   set -e
   unset AGENT_USAGE_FILE
 
-  status="success"; [ "$rc" -eq 0 ] || status="failed"
   branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   pr_url=""
   [ -n "$branch" ] && pr_url="$(gh pr view "$branch" --json url -q .url 2>/dev/null || true)"
+  # Truthful status from completion evidence, not the provider exit code alone.
+  # A dry run is a no-op preview: neither success nor incomplete.
+  if [ "$DRY_RUN" -eq 1 ]; then
+    status="dry-run"
+  else
+    final_message="$(cat "$RUN_DIR/stdout.txt" 2>/dev/null || true)"
+    status="$(implementer_run_status "$rc" "$pr_url" "$final_message")"
+  fi
   tel telemetry_finalize_run "$RUN_DIR" "$status" "$rc" "$branch" "$pr_url" "$USAGE_FILE"
   if [ "$DRY_RUN" -ne 1 ]; then
     tel post_done_comment "$status" "$rc" "$branch" "$pr_url"
