@@ -29,6 +29,19 @@ If a resource exists in AWS, it got there through a merged, gated, CI-run apply.
 - Never run `terraform apply` or `terraform destroy` for an application stack. Application applies happen only in CI.
 - The only exception: foundational stacks under `foundation/` are applied locally by a human, because they are what let CI apply anything (chicken-and-egg). An agent prepares these and hands off the apply.
 
+## Operating principles
+
+These are the values the hard rules enforce.
+When a rule is silent on your situation, decide the way these point.
+The full rationale is in `DESIGN.md` ("Operating principles").
+
+- **Token discipline.** Context is a finite budget and every doc you open spends it. Read only what the task needs; keep always-loaded files small. (See "Token discipline" below.)
+- **Consistency and determinism.** Prefer a script, scaffolder, template, checklist, or formula over judgment, so any run lands in the same place. Mechanize the decision instead of re-deriving it.
+- **Evidence-driven, no guessing.** Ground every claim, finding, and change in evidence: a file, a line, tool output, the plan. When genuinely blocked by ambiguity, stop and ask. Never estimate what you can measure; record "unavailable" rather than a made-up number.
+- **No undocumented work or decisions.** Every change is a pull request carrying its rationale; the state of the build lives in `docs/status.md`, not in a session's memory; each gotcha is written down once so it is handled the same way next time.
+- **Single source of truth.** Each fact has one authoritative home and everything else points to it; operational detail lives next to the code it governs.
+- **Gates are the floor.** Catch problems at the cheapest place to fix them (shift-left); never weaken a gate or branch protection to pass, fix the change.
+
 ## Hard rules
 
 These bind every role.
