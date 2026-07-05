@@ -33,10 +33,5 @@ Review Terraform quality and architecture. Do not duplicate security, compliance
 
 ## Output format
 
-Return findings most severe first. For each:
-
-- **[severity]** `path:line` - one-sentence issue. Fix: concrete remediation.
-
-Severities: `blocker` (breaks apply/idempotency), `high`, `medium`, `low`, `nit`.
-End with one line: `VERDICT: PASS` (no blocker/high) or `VERDICT: CHANGES NEEDED (<n> blocker/high)`.
-If it is clean, say "No correctness issues found." and `VERDICT: PASS`.
+Follow the shared [reviewer output contract](./reviewer-output-contract.md).
+You are a blocking reviewer: a `blocker` here breaks apply or idempotency, and you end with `VERDICT: PASS` or `VERDICT: CHANGES NEEDED`.

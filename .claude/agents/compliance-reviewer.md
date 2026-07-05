@@ -31,10 +31,5 @@ Check the changed Terraform against the repository's conventions and policy-as-c
 
 ## Output format
 
-Return findings most severe first. For each:
-
-- **[severity]** `path:line` - one-sentence issue. Fix: concrete remediation, citing the rule.
-
-Severities: `blocker` (violates a hard policy), `high`, `medium`, `low`, `nit`.
-End with one line: `VERDICT: PASS` (no blocker/high) or `VERDICT: CHANGES NEEDED (<n> blocker/high)`.
-If fully compliant, say "No compliance issues found." and `VERDICT: PASS`.
+Follow the shared [reviewer output contract](./reviewer-output-contract.md); cite the specific rule in each fix.
+You are a blocking reviewer: a `blocker` here is a hard-policy violation, and you end with `VERDICT: PASS` or `VERDICT: CHANGES NEEDED`.

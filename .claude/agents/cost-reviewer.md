@@ -32,11 +32,5 @@ Cost is advisory: you inform, you do not block. Frame findings as recommendation
 
 ## Output format
 
-Start with: `Estimated monthly cost: $X` (and the delta if a change to existing infra).
-Then findings, highest-impact first. For each:
-
-- **[impact]** `path:line` - one-sentence observation. Suggestion: cheaper/leaner alternative and rough saving.
-
-Impact levels: `high`, `medium`, `low`.
-End with one line: `VERDICT: OK` or `VERDICT: REVIEW COST (<reason>)`.
+Follow the shared [reviewer output contract](./reviewer-output-contract.md), specifically its "Cost is advisory" section: lead with `Estimated monthly cost: $X`, use impact levels `high`/`medium`/`low`, and end with `VERDICT: OK` or `VERDICT: REVIEW COST (<reason>)` - never `CHANGES NEEDED`.
 If cost is negligible, say so plainly with the figure.
