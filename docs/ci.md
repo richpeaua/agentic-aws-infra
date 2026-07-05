@@ -61,7 +61,8 @@ For what each gate *tool* checks, see DESIGN "[Gate stack and enforcement](../DE
 | `static` | `discover` | Per changed root: `fmt -check`, `validate`, `tflint`. No AWS. Skipped when no root changed. | Yes, via `gate` |
 | `plan` | `discover` | Per changed root: `terraform plan` (read role), then Checkov (security), Conftest (compliance), Infracost (advisory). Skipped on fork PRs (no OIDC) and when no root changed. | Yes, via `gate` |
 | `module-tests` | - | Native `terraform test` for modules that ship tests. Mocked providers, offline. | Yes, via `gate` |
-| `gate` | `policy-tests`, `module-tests`, `static`, `plan` | Aggregator. `if: always()`; fails if any of those four ended in `failure`/`cancelled`, passes if they succeeded *or were skipped*. | This is the single required status check. |
+| `module-docs` | - | `scripts/gen-docs.sh --check`: fails if any module's `terraform-docs` interface table is out of date. No AWS. | Yes, via `gate` |
+| `gate` | `policy-tests`, `module-tests`, `static`, `plan`, `module-docs` | Aggregator. `if: always()`; fails if any of those five ended in `failure`/`cancelled`, passes if they succeeded *or were skipped*. | This is the single required status check. |
 
 `gate` is the only required status check on `main`, so branch protection needs just one context even though the matrix jobs and fork-skips make the others come and go.
 Because `gate` treats *skipped* as pass, a PR that changes no stack root (docs-only) or comes from a fork still passes it.

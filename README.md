@@ -50,7 +50,7 @@ Each major directory carries a local README with its conventions; the docs above
 ## Prerequisites
 
 - A dedicated AWS account with IAM Identity Center (SSO) and an `AdministratorAccess` permission set.
-- Local tooling: `terraform` (>= 1.10), `awscli`, `gh`, `jq`, `infracost`, `tflint`, `checkov`, and `conftest`.
+- Local tooling: `terraform` (>= 1.10), `awscli`, `gh`, `jq`, `infracost`, `tflint`, `checkov`, `conftest`, and `terraform-docs` (module interface tables; pin the version in `.github/workflows/pr-checks.yml` `TFDOCS_VERSION`).
 - An Infracost account (`infracost auth login`) that belongs to an organization.
 
 ## Local setup
