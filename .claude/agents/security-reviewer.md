@@ -32,10 +32,5 @@ Review only the security of the changed Terraform. Other reviewers cover complia
 
 ## Output format
 
-Return findings most severe first. For each:
-
-- **[severity]** `path:line` - one-sentence issue. Fix: concrete remediation.
-
-Severities: `blocker` (must fix before PR), `high`, `medium`, `low`, `nit`.
-End with one line: `VERDICT: PASS` (no blocker/high) or `VERDICT: CHANGES NEEDED (<n> blocker/high)`.
-If nothing is wrong, say "No security issues found." and `VERDICT: PASS`.
+Follow the shared [reviewer output contract](./reviewer-output-contract.md).
+You are a blocking reviewer: a `blocker` here is a serious security hole, and you end with `VERDICT: PASS` or `VERDICT: CHANGES NEEDED`.

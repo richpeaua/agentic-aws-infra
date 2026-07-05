@@ -105,6 +105,26 @@ $SKILL_BODY"
   fi
 fi
 
+# The four review-panel reviewers share one output contract. As with the skill
+# above, neither backend auto-loads it, so inline the single source of truth into
+# every reviewer's rubric. This guarantees a reviewer on either provider emits the
+# `VERDICT:` line that scripts/review.sh parses, instead of relying on it to open a
+# linked file. One source: .claude/agents/reviewer-output-contract.md.
+case "$NAME" in
+  *-reviewer)
+    CONTRACT_FILE="$REPO_ROOT/.claude/agents/reviewer-output-contract.md"
+    if [ -f "$CONTRACT_FILE" ]; then
+      RUBRIC="$RUBRIC
+
+---
+
+$(cat "$CONTRACT_FILE")"
+    else
+      warn "reviewer output contract not found at .claude/agents/reviewer-output-contract.md"
+    fi
+    ;;
+esac
+
 if [ "$WRITABLE" -eq 1 ] && [ "$NAME" != "implementer" ]; then
   die "--writable is reserved for the implementer; reviewers and other specialists stay read-only"
 fi
