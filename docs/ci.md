@@ -50,5 +50,5 @@ Workflows that assume a role need `permissions: id-token: write` and use `aws-ac
 
 - Pull request required before merging.
 - No force pushes, no deletions, linear history required.
-- Required status checks: added in Phase 4 once the PR checks workflow has run once.
-- `enforce_admins` is currently off to allow direct pushes during the phased build; tighten when the pipeline is complete.
+- Required status checks: `gate` (the aggregating job in `pr-checks.yml`) is required before a pull request can merge to `main`.
+- `enforce_admins` is off, so repository administrators are not forced through these rules; the no-direct-push-to-`main` rule is enforced by policy (`AGENTS.md`), not by branch-protection admin enforcement.
