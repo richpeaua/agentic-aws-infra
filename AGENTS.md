@@ -104,6 +104,7 @@ This file is always loaded, so every agent must keep context usage intentional.
 Top-level references (no directory README covers these):
 
 - `docs/status.md` - current build state. Read first.
+- `docs/glossary.md` - definitions of the repo's load-bearing terms (root, stack, gate, the panel, the loop, ...).
 - `DESIGN.md` - authoritative design and rationale (the "why").
 - `docs/ci.md` - CI configuration contract (environment, variable, and secret names).
 - `docs/troubleshooting.md` - known failure modes and fixes.
