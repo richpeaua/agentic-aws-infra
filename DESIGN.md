@@ -95,6 +95,23 @@ This keeps every agent's context lean and is why the work is decomposed into an 
 
 Neither the orchestrator nor the implementer runs `terraform apply` or `terraform destroy` for an application stack.
 
+```mermaid
+flowchart TD
+    H["Human: describe request"] --> O["Orchestrator: plan, file one issue per unit"]
+    O --> I["Implementer: author module + thin roots on a branch"]
+    I --> P["Review panel, parallel:<br/>security, compliance, cost, correctness"]
+    P -->|findings| I
+    I --> PR["Open pull request"]
+    PR --> G["CI gate stack on PR:<br/>fmt, validate, tflint, Checkov, Conftest, Infracost"]
+    G --> M{"Human reviews and merges:<br/>single code + deploy approval"}
+    M --> DA["CI: apply dev"]
+    DA --> DS{"dev apply + dev smoke pass?"}
+    DS -->|no| STOP["Prod blocked"]
+    DS -->|yes| PA["CI: apply prod, no human click"]
+    PA --> PS["CI: prod smoke tests"]
+    PS --> DONE["Orchestrator tracks to done,<br/>updates docs/status.md"]
+```
+
 ## Repository
 
 - Hosting: GitHub, owner `richpeaua`.
@@ -206,6 +223,35 @@ This catches out-of-band changes made outside the pipeline.
 - The laptop may apply foundational stacks only: the state backend and the OIDC provider and roles. These have a chicken-and-egg dependency because they are what let CI apply at all.
 - The laptop may never apply or destroy application stacks. This is enforced by `.claude/settings.json`, the writable implementer launcher, and by the `provision-aws` skill.
 - A documented, deliberately friction-ful break-glass procedure exists for emergencies. It is not an easy button.
+
+```mermaid
+flowchart TD
+    subgraph laptop["Local laptop, AWS SSO - may apply foundation only"]
+        FA["Apply foundation/ stacks:<br/>state-backend + github-oidc"]
+    end
+
+    subgraph ci["CI: GitHub Actions, keyless via OIDC - applies application stacks"]
+        readrole["read role<br/>subject: pull_request"]
+        devrole["dev-apply role<br/>subject: environment dev"]
+        prodrole["prod-apply role<br/>subject: environment production"]
+    end
+
+    subgraph aws["Dedicated AWS account"]
+        state[("S3 state bucket:<br/>one key per root")]
+        devroots["stacks/*/dev roots"]
+        prodroots["stacks/*/prod roots"]
+    end
+
+    FA -->|creates| readrole
+    FA -->|creates| devrole
+    FA -->|creates| prodrole
+    FA -->|creates| state
+    readrole -.->|plan only, no writes| aws
+    devrole -->|apply| devroots
+    prodrole -->|apply| prodroots
+    devroots -->|state| state
+    prodroots -->|state| state
+```
 
 ## Secrets and configuration management
 
