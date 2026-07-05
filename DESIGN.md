@@ -156,6 +156,20 @@ The full panel runs for substantial changes: new or changed IAM, networking, dat
 Security review is never gated away from a change that touches IAM, networking, or public access; when in doubt, the full panel runs.
 The explicit heuristic lives in the `provision-aws` skill.
 
+## Run observability
+
+The specialist agents run headlessly as independent processes, so a run is invisible unless it records itself.
+Every headless run - an implementer dispatch (`scripts/implement.sh`), a review panel (`scripts/review.sh`), or a single specialist (`scripts/agent.sh`) - is therefore made observable, and it is done local-first so nothing sensitive has to cross into this public repo.
+The design is strictly additive: observability never changes what an agent does, and a telemetry or comment failure is a non-blocking warning, never a run failure.
+
+- Durable run records. Each run writes a directory under `.agents/runs/<run-id>/` holding `metadata.json` (kind, agent, provider, model, issue, status, timing, exit code, branch, PR URL, token usage), the prompt, the captured stdout and stderr, and - for a panel - the shared tool artifacts plus each reviewer's context and output. The store is git-ignored because it can contain prompts, plan output, and identifiers, so it is never committed.
+- Truthful token accounting. Usage is read from the provider's structured output when it is exposed (Claude Code `--output-format json`) and tagged with its source; it is never estimated. When a provider does not surface usage, it is recorded as `unavailable` rather than guessed.
+- A viewer. `scripts/runs.sh list|show|clean` inspects active and completed runs, links each review-panel parent to its reviewer children, and prunes old records. A run in flight shows a `running` status.
+- Scrubbed GitHub comments. An implementer run posts a small start and completion comment on the linked issue, and the panel can post one summary comment; every comment is bounded and scrubbed. Raw prompts, stdout, stderr, plans, and identifiers are redacted and stay only in the local store.
+
+Telemetry is opt-out (`AGENTS_TELEMETRY=0`) and the store location is overridable (`AGENTS_RUNS_DIR`).
+The operational reference - exactly what is recorded, the viewer commands, and the configuration - lives in [`docs/observability.md`](./docs/observability.md).
+
 ## Environments
 
 Dev and prod coexist in the one account and are separated logically.
@@ -202,6 +216,12 @@ This catches out-of-band changes made outside the pipeline.
   skills/provision-aws/   # the implementer's playbook: author -> panel -> PR (no local apply)
 scripts/
   implement.sh        # orchestrator entry point for a constrained writable implementer
+  agent.sh            # launch one specialist (Claude or Codex) from one portable rubric
+  review.sh           # the review panel: precompute once, spread across providers
+  runs.sh             # viewer for headless run records (list / show / clean)
+  lib/telemetry.sh    # run-record and scrubbing helpers (opt-out via AGENTS_TELEMETRY)
+.agents/
+  runs/               # git-ignored: durable headless run records (never committed)
 foundation/
   state-backend/      # S3 state bucket + AWS Budget (laptop-applied)
   github-oidc/        # OIDC provider + read, dev-apply, prod-apply roles (laptop-applied)
@@ -215,6 +235,11 @@ policy/
   conftest/           # Rego compliance policies
   checkov/            # Checkov config and suppressions
 tests/                # smoke test scripts
+docs/
+  status.md           # current build state
+  observability.md    # headless run observability reference
+  ci.md               # CI configuration contract
+  troubleshooting.md  # known failure modes and fixes
 DESIGN.md
 README.md
 ```
