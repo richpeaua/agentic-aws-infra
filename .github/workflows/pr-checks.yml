@@ -14,6 +14,7 @@ concurrency:
 
 env:
   CONFTEST_VERSION: "0.56.0"
+  TFDOCS_VERSION: "0.24.0"
 
 jobs:
   # Rego unit tests for the compliance policies. Pure logic; no AWS, always runs.
@@ -135,16 +136,29 @@ jobs:
             terraform -chdir="$m" test
           done
 
+  # Verify every module's terraform-docs interface table is current. Pure docs
+  # generation from the module .tf; no AWS. Fails like a fmt check if a table drifts.
+  module-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install terraform-docs
+        run: |
+          curl -sSL "https://github.com/terraform-docs/terraform-docs/releases/download/v${TFDOCS_VERSION}/terraform-docs-v${TFDOCS_VERSION}-linux-amd64.tar.gz" | tar -xz terraform-docs
+          sudo mv terraform-docs /usr/local/bin/
+      - name: Check module docs are up to date
+        run: scripts/gen-docs.sh --check
+
   # Single required status check. Always runs; fails only if a real job failed,
   # so branch protection can require just this one even when others skip.
   gate:
-    needs: [policy-tests, module-tests, static, plan]
+    needs: [policy-tests, module-tests, static, plan, module-docs]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         run: |
-          results='${{ needs.policy-tests.result }} ${{ needs.module-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }}'
+          results='${{ needs.policy-tests.result }} ${{ needs.module-tests.result }} ${{ needs.static.result }} ${{ needs.plan.result }} ${{ needs.module-docs.result }}'
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then

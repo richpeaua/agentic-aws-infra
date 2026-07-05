@@ -43,8 +43,9 @@ cat <<EOF
 
 Scaffolded stack '$NAME'. Next:
   1. Define resources in modules/$NAME/main.tf and outputs in modules/$NAME/outputs.tf.
-  2. In each of stacks/$NAME/{dev,prod}: cp backend.tfbackend.example backend.tfbackend and set the bucket.
-  3. Validate:  scripts/check.sh stacks/$NAME/dev
-  4. Plan:      scripts/plan.sh  stacks/$NAME/dev
-  5. Run the review panel, then open a PR. Do not apply locally.
+  2. Write the purpose paragraph in modules/$NAME/README.md, then run scripts/gen-docs.sh to fill its interface table.
+  3. In each of stacks/$NAME/{dev,prod}: cp backend.tfbackend.example backend.tfbackend and set the bucket.
+  4. Validate:  scripts/check.sh stacks/$NAME/dev
+  5. Plan:      scripts/plan.sh  stacks/$NAME/dev
+  6. Run the review panel, then open a PR. Do not apply locally.
 EOF
