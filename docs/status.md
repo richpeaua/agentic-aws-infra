@@ -2,7 +2,7 @@
 
 Single in-repo source of truth for where the build is.
 Update this when a phase completes or the deployed footprint changes.
-Detailed phase specs are the GitHub issues (initial-build epic: #8; v2 handoff-hardening epic: #33).
+Detailed phase specs are the GitHub issues (initial-build epic: #8; v2 handoff-hardening epic: #33; model-routing epic: #45).
 
 ## Phases
 
@@ -28,6 +28,7 @@ With the pipeline live, v2 matures the agent workflow itself: cheaper gates, a c
 - [x] v2.3 - Headless implementer handoff: branch/PR workflow required of every agent (#25); `scripts/implement.sh` writable implementer launcher (#26) with an expanded coding mandate (#27); Codex/Claude config parity (#40).
 - [x] v2.4 - Run observability: durable local run records under `.agents/runs/`, the `scripts/runs.sh` viewer, scrubbed issue/PR comments, and best-effort token usage (#30, #32); documented at the architecture level in DESIGN/README/AGENTS (#43).
 - [ ] v2.5 - Handoff hardening and cost controls (epic #33, in progress): widened writable allowlist for repo-owned verification (#34, merged); truthful `success`/`failed`/`incomplete` finalization (#35, merged); runtime/budget guards (#36); live progress and usage visibility (#37); safe GitHub body construction and permission/guard docs (#38).
+- [ ] v2.6 - Role-aware model routing and specialist agent expansion (epic #45, planned): pin the right model to each role via semantic tiers declared in agent frontmatter (`heavy`/`standard`/`light`), mapped to a concrete model per provider, honored by both the headless launcher and native subagent paths and enforced against drift (#46, #47, #48); ship a light-tier documentor as the first new specialist (#49); document the routing architecture (#50). Quality-first, cost-capped. No change to the deployed AWS footprint.
 
 ## Deployed footprint
 
