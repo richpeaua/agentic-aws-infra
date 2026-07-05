@@ -26,6 +26,12 @@
 #
 # Read-only by default (reviewers). --writable is reserved for the implementer
 # and is constrained here, not left to the child agent's settings.
+#
+# The implementer additionally gets the provision-aws skill injected into its rubric
+# on both providers (neither backend auto-loads it under these launch conditions), and
+# on Codex a terraform PATH shim enforces the same apply/destroy denial that
+# --disallowedTools gives the Claude implementer. One skill file, one guardrail, both
+# providers.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 source "$REPO_ROOT/scripts/lib/telemetry.sh"
@@ -76,6 +82,28 @@ RUBRIC="$(awk 'BEGIN{sep=0} /^---[[:space:]]*$/{sep++; next} sep>=2{print}' "$DE
 
 CONTEXT="$(cat)"
 [ -n "$CONTEXT" ] || warn "agent $NAME received empty stdin context"
+
+# The implementer's playbook is the provision-aws skill. Neither launcher path can
+# rely on runtime skill auto-discovery - Codex has no skills mechanism, and the Claude
+# headless tool allowlist below deliberately excludes the Skill tool - so inject the
+# canonical skill body into the rubric for both providers. One source of truth:
+# .claude/skills/provision-aws/SKILL.md (Codex is fed the same file, not a copy).
+if [ "$NAME" = "implementer" ]; then
+  SKILL_FILE="$REPO_ROOT/.claude/skills/provision-aws/SKILL.md"
+  if [ -f "$SKILL_FILE" ]; then
+    SKILL_BODY="$(awk 'BEGIN{sep=0} /^---[[:space:]]*$/{sep++; next} sep>=2{print}' "$SKILL_FILE")"
+    [ -n "$SKILL_BODY" ] || warn "provision-aws SKILL.md has no body after its frontmatter"
+    RUBRIC="$RUBRIC
+
+---
+
+# provision-aws skill (the implementer's playbook)
+
+$SKILL_BODY"
+  else
+    warn "provision-aws skill not found at .claude/skills/provision-aws/SKILL.md"
+  fi
+fi
 
 if [ "$WRITABLE" -eq 1 ] && [ "$NAME" != "implementer" ]; then
   die "--writable is reserved for the implementer; reviewers and other specialists stay read-only"
@@ -137,9 +165,39 @@ $CONTEXT"
   [ -n "$MODEL" ] && set -- codex exec --sandbox "$sandbox" --ask-for-approval never --skip-git-repo-check -C "$REPO_ROOT" --model "$MODEL" -o "$last" -
   if [ "${AGENT_DRY_RUN:-0}" = "1" ]; then
     printf 'DRY-RUN provider=codex model=%s writable=%s sandbox=%s\n' "${MODEL:-default}" "$WRITABLE" "$sandbox"
+    [ "$WRITABLE" -eq 1 ] && [ "$NAME" = "implementer" ] && printf 'GUARDRAIL: terraform apply/destroy blocked via PATH shim\n'
     printf 'CMD: %s\n' "$*"
     rm -f "$last"
     return 0
+  fi
+  # Parity guardrail: the Claude writable implementer is denied terraform apply/destroy
+  # via --disallowedTools. `codex exec` has no per-command denylist, so enforce the same
+  # rule with a terraform shim earlier on PATH that refuses apply/destroy and passes every
+  # other invocation through to the real binary. This keeps the "never apply/destroy an
+  # application stack" guardrail explicit on both providers rather than implicit.
+  if [ "$WRITABLE" -eq 1 ] && [ "$NAME" = "implementer" ]; then
+    local real_tf shim_dir
+    real_tf="$(command -v terraform || true)"
+    if [ -n "$real_tf" ]; then
+      shim_dir="$(mktemp -d)"
+      cat > "$shim_dir/terraform" <<SHIM
+#!/usr/bin/env bash
+# Guardrail shim (scripts/agent.sh): block apply/destroy, pass everything else through.
+for arg in "\$@"; do
+  case "\$arg" in
+    -*) continue ;;
+    apply|destroy) echo "guardrail: 'terraform \$arg' is blocked for the implementer (application applies are CI-only)" >&2; exit 3 ;;
+    *) break ;;
+  esac
+done
+exec "$real_tf" "\$@"
+SHIM
+      chmod +x "$shim_dir/terraform"
+      export PATH="$shim_dir:$PATH"
+      trap 'rm -rf "$shim_dir"' RETURN
+    else
+      warn "terraform not found on PATH; skipping Codex apply/destroy guardrail shim"
+    fi
   fi
   # Codex streams events to stdout; send those to stderr and emit only the final message.
   if [ -n "${AGENT_USAGE_FILE:-}" ]; then
