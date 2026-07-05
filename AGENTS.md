@@ -99,9 +99,25 @@ This file is always loaded, so every agent must keep context usage intentional.
 - Issues labeled `needs-human` contain steps only the repo owner can do (SSO login and apply of foundational stacks, entering secret values, the PR merge). Prepare everything up to that point and hand off explicitly.
 - When something breaks, check `docs/troubleshooting.md` before improvising.
 
+## Task routing (read only what the task needs)
+
+Land on the minimal doc set for what you are about to do, and do not read past what the row calls for.
+
+| Doing this | Read this |
+| --- | --- |
+| Understand the "why" / architecture | `DESIGN.md` |
+| Look up a term | `docs/glossary.md` |
+| Plan, triage, or manage the loop | `.claude/agents/orchestrator.md` + `docs/status.md` |
+| Build or modify a stack | `provision-aws` skill + `stacks/README.md` |
+| Write or edit a script, test, or tooling | `.claude/agents/implementer.md` + the target directory's `README.md` |
+| Author or adjust policy | `policy/README.md` |
+| Apply a foundational stack | `foundation/README.md` |
+| Debug CI or a failing check | `docs/troubleshooting.md` + `docs/ci.md` |
+| Inspect headless runs or token usage | `docs/observability.md` |
+
 ## Where things live
 
-Top-level references (no directory README covers these):
+The full file index behind the router above (no directory README covers these):
 
 - `docs/status.md` - current build state. Read first.
 - `docs/glossary.md` - definitions of the repo's load-bearing terms (root, stack, gate, the panel, the loop, ...).
