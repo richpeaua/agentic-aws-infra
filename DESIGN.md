@@ -26,6 +26,9 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 
 ## Roles
 
+Responsibilities are split across a few narrow agents so each one loads only what its task needs: the universal guardrails in `AGENTS.md` are always loaded, while role procedure and the `provision-aws` skill load on demand.
+This keeps every agent's context lean and is why the work is decomposed into an orchestrator, an implementer, and a review panel rather than one generalist agent.
+
 - Human: describes infrastructure in natural language, then reviews and merges PRs. Merge is the single deploy approval; there is no separate environment-gate click.
 - Orchestrator agent: the Agile project manager (`.claude/agents/orchestrator.md`). It runs intake and planning, decomposes a request into GitHub issues for the implementer, launches the implementer with `scripts/implement.sh`, and manages the specialist agents and the loop to completion. It does not author, plan, or apply Terraform.
 - Implementer agent: the builder (`.claude/agents/implementer.md`, driven by the `provision-aws` skill). It takes one issue and implements it - authoring the stack, running the review panel, and opening the PR - as a headless writable session. It does not apply application stacks.
@@ -39,7 +42,7 @@ The only exception is foundational infrastructure (see "Local vs CI write bounda
 2. The orchestrator clarifies scope, plans the work, and files one GitHub issue per independently-shippable unit. The issues are the handoff to the implementer.
 3. For each issue the orchestrator launches a separate implementer session with `scripts/implement.sh <issue>`. The implementer creates or edits a stack as a module plus thin per-environment roots on a new branch, and runs `terraform fmt`, `validate`, `plan`, and Infracost locally to produce a draft and a cost figure.
 4. The implementer computes the deterministic tool output once and fans out to the review panel in parallel. Each reviewer is read-only, reasons over the provided artifacts, and reports findings.
-5. The implementer applies fixes for panel findings, then re-plans. If a headless pass needs follow-up, the orchestrator re-dispatches `scripts/implement.sh <issue> --findings <file>` with the prior findings attached.
+5. The implementer applies fixes for panel findings, then re-plans. If a headless pass needs follow-up, the orchestrator re-dispatches the implementer with the prior findings attached.
 6. The implementer pushes the branch and opens a PR with `gh`.
 7. CI runs the gate stack on the PR and posts plan, security, compliance, and cost results as a comment.
 8. The human reviews and merges the PR. Merge is the single approval - both code and deploy approval.
@@ -101,19 +104,14 @@ Parallelism belongs in review, not authoring: there is a single author (the impl
 
 ### Independent, provider-agnostic agents
 
-The reviewers run as independent processes, not in-session subagents. `scripts/agent.sh` launches any agent definition headlessly on either backend - Claude Code (`claude -p`) or OpenAI Codex (`codex exec`) - by feeding the agent's markdown body as a portable rubric. One definition, either provider.
-`scripts/review.sh` uses this to spread the four reviewers across providers (round-robin over Claude and Codex by default, per-agent overridable), so a review draws on more than one token budget and the panel is not bottlenecked on a single account.
-The orchestrator manages these specialists as part of its loop: it launches the panel at the point a change is ready to review, and it can launch a single reviewer for a light pass. Because the specialists are independent processes rather than nested subagents, there is no subagent-nesting limit to work around.
+The specialists run as independent processes, not in-session subagents.
+`scripts/agent.sh` launches any agent definition headlessly on either backend - Claude Code or OpenAI Codex - by feeding the agent's markdown body as a portable rubric, so one definition runs on either provider.
+`scripts/review.sh` spreads the four reviewers across providers, so a review draws on more than one token budget and is not bottlenecked on a single account.
+Because the specialists are independent processes rather than nested subagents, there is no subagent-nesting limit to work around.
 
-The implementer is launched separately through `scripts/implement.sh`, which calls `scripts/agent.sh implementer --writable`.
-Writable mode is reserved for the implementer and is constrained at the launcher.
-For Claude, the launcher grants only scoped tools and command patterns needed to author a PR: file editing, `git`, `gh`, read-only Terraform commands (`init`, `validate`, `fmt`, `plan`, `show`, `output`, `providers`, `version`), scanners, and repository scripts.
-It explicitly denies `terraform apply` and `terraform destroy`.
-It never uses dangerous permission bypass flags.
-
-Writable Codex implementer runs are opt-in only.
-Terraform plans and local tool output can contain account IDs, bucket names, role ARNs, and emails, which this public repo forbids committing.
-By default, identifier-bearing implementer runs are pinned to Claude; Codex can be used only when the operator sets `IMPLEMENTER_CODEX_OPT_IN=1` after deciding the run's data boundary is acceptable.
+The implementer is launched separately, in a writable mode reserved for it and constrained at the launcher: it grants only the scoped tools needed to author a PR and denies `terraform apply` and `terraform destroy` outright.
+Identifier-bearing implementer runs default to Claude, because Terraform plans and local tool output can contain account IDs, bucket names, role ARNs, and emails that this public repo forbids committing; Codex is opt-in per run once the operator accepts that data boundary.
+The exact tool allowlist and the opt-in switch live with the launcher; see [`scripts/README.md`](./scripts/README.md).
 
 ### Precompute once, reason many
 
@@ -132,15 +130,14 @@ The explicit heuristic lives in the `provision-aws` skill.
 ## Run observability
 
 The specialist agents run headlessly as independent processes, so a run is invisible unless it records itself.
-Every headless run - an implementer dispatch (`scripts/implement.sh`), a review panel (`scripts/review.sh`), or a single specialist (`scripts/agent.sh`) - is therefore made observable, and it is done local-first so nothing sensitive has to cross into this public repo.
+Every headless run - an implementer dispatch, a review panel, or a single specialist - is therefore made observable, local-first so nothing sensitive has to cross into this public repo.
 The design is strictly additive: observability never changes what an agent does, and a telemetry or comment failure is a non-blocking warning, never a run failure.
 
-- Durable run records. Each run writes a directory under `.agents/runs/<run-id>/` holding `metadata.json` (kind, agent, provider, model, issue, status, timing, exit code, branch, PR URL, token usage), the prompt, the captured stdout and stderr, and - for a panel - the shared tool artifacts plus each reviewer's context and output. The store is git-ignored because it can contain prompts, plan output, and identifiers, so it is never committed.
-- Truthful token accounting. Usage is read from the provider's structured output when it is exposed (Claude Code `--output-format json`) and tagged with its source; it is never estimated. When a provider does not surface usage, it is recorded as `unavailable` rather than guessed.
-- A viewer. `scripts/runs.sh list|show|clean` inspects active and completed runs, links each review-panel parent to its reviewer children, and prunes old records. A run in flight shows a `running` status.
-- Scrubbed GitHub comments. An implementer run posts a small start and completion comment on the linked issue, and the panel can post one summary comment; every comment is bounded and scrubbed. Raw prompts, stdout, stderr, plans, and identifiers are redacted and stay only in the local store.
+- Durable local run records capture each run's metadata, prompt, and output (and, for a panel, the shared tool artifacts and each reviewer's context). The store is git-ignored because it can hold prompts, plan output, and identifiers.
+- Token accounting is truthful: usage is read from the provider's structured output when exposed and tagged with its source, never estimated; when a provider does not surface it, it is recorded as unavailable rather than guessed.
+- A local viewer inspects active and completed runs and links each panel to its reviewer children.
+- GitHub comments are bounded and scrubbed: a run posts small start and completion notes, but raw prompts, output, plans, and identifiers stay only in the local store.
 
-Telemetry is opt-out (`AGENTS_TELEMETRY=0`) and the store location is overridable (`AGENTS_RUNS_DIR`).
 The operational reference - exactly what is recorded, the viewer commands, and the configuration - lives in [`docs/observability.md`](./docs/observability.md).
 
 ## Environments
@@ -172,7 +169,7 @@ This catches out-of-band changes made outside the pipeline.
 - Committed code contains no account IDs, bucket names, role ARNs, or emails.
 - Local: a git-ignored config holds the state bucket name and other identifiers, plus `*.tfbackend` files for backend init.
 - CI: GitHub secrets and variables hold the account ID, role ARNs, state bucket, region, budget email, and the Infracost API key.
-- The `.gitignore` excludes `terraform.tfvars`, `*.auto.tfvars`, `*.tfbackend`, `*.tfstate*`, `tfplan`, and `.terraform/`.
+- `.gitignore` excludes the local tfvars, backend-config, state, and plan files so they cannot be committed.
 
 ## Repository layout
 
@@ -190,7 +187,7 @@ Claude Code auto-loads them via `CLAUDE.md`, which imports `AGENTS.md`.
 - Create the public GitHub repo and push.
 - Apply the `github-oidc` foundation stack from the laptop.
 - In GitHub: create the `dev` and `production` Environments (both with a deployment-branch policy restricting deployments to `main`; no required reviewer - merge is the single deploy gate), add the secrets and variables, and enable branch protection with the blocking gates as required status checks.
-- Install local tooling: `gh`, `jq`, `tflint`, `checkov`, and `conftest` (or `opa`), in addition to `terraform`, `awscli`, and `infracost`.
+- Install the local tooling listed in the [README prerequisites](./README.md#prerequisites).
 
 ## Build phases
 
