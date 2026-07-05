@@ -15,6 +15,48 @@ The single guiding priority is production rigor: the workflow must be trustworth
 Multi-agent orchestration and every tool in the stack exist to serve that rigor, not for novelty.
 Prefer quality, simplicity, robustness, and long-term maintainability over speed of iteration.
 
+## Operating principles
+
+These principles follow from the north star and from what it takes to make the hundredth agent run as trustworthy as the first (`learnings/agentic-consistency.md`, `learnings/context-budget.md`).
+`AGENTS.md` states them as binding one-liners; this section is the reasoning behind them.
+When a specific rule is silent, decide the way these point.
+
+### Token discipline (context is a budget)
+
+An agent's context window is finite, and every token spent reading is a token not spent reasoning.
+So documentation and tooling are built for lean, on-demand loading: only the universal guardrails in `AGENTS.md` are always loaded, and depth (role procedure, the `provision-aws` skill, directory READMEs, this document) loads only when a task needs it.
+Read narrowly, prefer targeted commands over broad discovery, and keep always-loaded files small.
+A document has a cost, not only a value.
+
+### Consistency and determinism (remove the choices)
+
+Consistency across many independent runs is the hard part, and it does not come from better prose, because prose is interpreted and interpretation is exactly where two runs diverge.
+It comes from removing choices: shared scripts that both local work and CI call, a scaffolder instead of layout instructions, a naming formula instead of a guideline, a Definition-of-Done checklist instead of a judgment call, discoverable state in a file instead of a memory.
+Mechanize the decision so that any reasonable agent lands in the same place.
+
+### Evidence-driven, no guessing
+
+Every finding, claim, and change is grounded in evidence: a file and line, tool output, the plan diff, not recollection or assumption.
+Reviewers must cite `file:line`; token usage is read from the provider or recorded as unavailable, never estimated; when an issue is genuinely ambiguous, an agent stops and asks rather than inventing an answer.
+"Reasoned about" and "correct" are different properties, and this workflow demands both.
+
+### No undocumented work or decisions
+
+If it is not in the repo, it did not happen.
+Every change moves through a pull request that carries its rationale; the state of the build lives in `docs/status.md`, not in one session's context; every failure learned the hard way becomes a `docs/troubleshooting.md` entry so it is handled the same way next time.
+A cold agent, a human, or a different toolchain entirely must be able to reconstruct what is true and why by reading the repo.
+
+### Single source of truth
+
+Each fact has exactly one authoritative home, and everything else points to it: operational detail lives next to the code it governs (the directory READMEs), the "why" lives here, and the always-loaded rules live in `AGENTS.md`.
+Duplication is not only maintenance debt; for an agent it is re-read cost and a place for two copies to drift.
+
+### Gates are the floor, not the ceiling
+
+Deterministic gates and reasoning reviewers fail in different ways and cover for each other (`learnings/multi-agent-review-panel.md`).
+Problems are caught at the cheapest place to fix them (shift-left, before the PR), and CI remains the authoritative backstop.
+A gate is never weakened to make a change pass; the change is fixed.
+
 ## Core execution model: GitOps
 
 The privileged action, `terraform apply`, runs in CI, never on a laptop, for all application stacks.
