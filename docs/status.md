@@ -1,7 +1,7 @@
 # Build status
 
 Single in-repo source of truth for where the build is.
-Update this when a phase completes or the deployed footprint changes.
+Keep it current: update this file whenever a phase completes, an issue changes a checkbox state, or the deployed footprint changes. It should never describe completed work as still pending.
 Detailed phase specs are the GitHub issues (initial-build epic: #8; v2 handoff-hardening epic: #33; model-routing epic: #45).
 
 ## Phases
@@ -14,7 +14,7 @@ The end-to-end GitOps pipeline: foundation, gates, deploy, and QA, built and val
 - [x] Phase 2 - Foundation: `foundation/state-backend` and `foundation/github-oidc` applied (OIDC provider + read/dev-apply/prod-apply roles).
 - [x] Phase 3 - GitHub configuration: `dev` and `production` environments, variables, role-ARN secrets, branch protection. `INFRACOST_API_KEY` set.
 - [x] Phase 4 - PR gates + policy (#3): `pr-checks.yml` (policy-tests, discover, static, plan, gate), tflint, Checkov, Conftest + rego unit tests, Infracost. `gate` is the required status check on `main`. Gates are scoped to changed stacks.
-- [x] Phase 5 - Agent review panel + skill rewrite (#4). SKILL.md already reconciled to v2; panel subagents in `.claude/agents/` still to add.
+- [x] Phase 5 - Agent review panel + skill rewrite (#4). SKILL.md reconciled to v2; the four review-panel reviewers (`security`, `compliance`, `cost`, `correctness`) live in `.claude/agents/`.
 - [x] Phase 6 - Refactor static-site into module + dev/prod roots (#5). Merged #10. Old v1 demo destroyed. First stack validated through the full gate pipeline (surfaced and fixed the read-role + native-lockfile issue via `-lock=false`).
 - [x] Phase 7 - Deploy pipeline + end-to-end validation (#6). `deploy.yml` applies dev -> smoke -> prod -> smoke. The dev->prod gate is automated (a failed dev apply or dev smoke blocks prod); the single human approval is the PR merge (#18). Validated: dev and prod static-site both deployed through CI and live (HTTP 200).
 - [x] Phase 8 - QA layer: native `terraform test` for modules (mock provider, in pr-checks), post-apply smoke tests (`scripts/smoke.sh` in deploy), scheduled `drift.yml` (nightly plan, files a drift issue). deploy now only applies roots with a real plan diff (#7).
