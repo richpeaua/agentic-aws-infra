@@ -36,7 +36,7 @@ Run the loop autonomously: scaffold, author, check, plan, review panel, and open
    - `scripts/check.sh stacks/<name>/dev` (fmt, validate, tflint, scanners).
    - `scripts/plan.sh stacks/<name>/dev` (init, plan, Infracost). Repeat for `prod`.
 5. Run the review panel (below), fix its findings, and re-plan until the plan shows only intended changes and a re-plan is a no-op.
-6. `scripts/scan-secrets.sh`, then create a `<type>/<scope>` branch, commit, push, and open a PR with `gh`. Fill in the PR template completely (plan summary, cost, panel findings, Definition of Done). Reference the issue (`Closes #<n>`).
+6. `scripts/scan-secrets.sh`, then create a `<type>/<scope>` branch, commit, push, and open a PR with `gh`. Build the PR body safely (write it to a git-ignored file and pass `--body-file`, or into a `printf` variable passed quoted); never inline Markdown with backticks or `$` into `--body "..."`. See `.claude/agents/implementer.md` ("Constructing GitHub bodies safely"). Fill in the PR template completely (plan summary, cost, panel findings, Definition of Done). Reference the issue (`Closes #<n>`).
 7. Hand off: CI runs the gates; the human reviews and merges. On merge, CI applies dev, runs dev smoke tests, and - if dev apply and smoke pass - automatically applies prod and runs prod smoke tests. There is no second human gate before prod; the merge is the deploy approval.
 
 Do not apply. Do not merge on the user's behalf unless asked.
