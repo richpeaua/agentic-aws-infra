@@ -1,14 +1,3 @@
-output "queue_url" {
-  description = "URL of the main work queue."
-  value       = module.task_queue.queue_url
-}
-
-output "queue_arn" {
-  description = "ARN of the main work queue."
-  value       = module.task_queue.queue_arn
-}
-
-output "dlq_arn" {
-  description = "ARN of the dead-letter queue."
-  value       = module.task_queue.dlq_arn
-}
+# Outputs removed with the task_queue module call to destroy the dev SQS
+# resources through the pipeline (see issue #80). They will be restored with
+# the module call in the redeploy.
