@@ -13,9 +13,21 @@ source "$REPO_ROOT/scripts/lib/telemetry.sh"
 
 RUNS_DIR="$(telemetry_runs_dir)"
 
+# Single source for the usage block (lines 2-9 of this file's header comment).
+_usage_text() {
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Usage error: print to stderr and exit non-zero (unknown command/arg, missing subcommand).
 usage() {
-  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
+  _usage_text >&2
   exit 2
+}
+
+# Explicit help: print to stdout and exit 0 (asking for help is not an error).
+help_ok() {
+  _usage_text
+  exit 0
 }
 
 # Emit metadata.json paths for existing runs, newest first (ids sort chronologically).
@@ -155,7 +167,8 @@ main() {
     list)  cmd_list "$@" ;;
     show)  cmd_show "$@" ;;
     clean) cmd_clean "$@" ;;
-    ''|-h|--help) usage ;;
+    -h|--help) help_ok ;;
+    '') usage ;;
     *) die "unknown command: $sub (expected list|show|clean)" ;;
   esac
 }
