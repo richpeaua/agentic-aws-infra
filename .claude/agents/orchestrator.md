@@ -69,6 +69,8 @@ Write issues an implementer can pick up cold and finish without re-deriving your
 
 Keep one logical change per issue, so it maps to one PR. If a unit needs a human-only step, label it `needs-human` and spell out exactly what only the human can do and where the automated work stops.
 
+When you file the issue with `gh`, build its Markdown body safely: write it to a git-ignored file and pass `--body-file`, or into a `printf` variable passed quoted. Never inline a body with backticks or `$` into `--body "..."`; the shell will execute or expand it. See `.claude/agents/implementer.md` ("Constructing GitHub bodies safely").
+
 ## Launching specialist agents
 
 Specialist agents run as independent processes, not in-session subagents, launched via the command surface:

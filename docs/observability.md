@@ -72,6 +72,11 @@ While a run is in flight its `status` is `running` and `duration` shows `-`.
 - `AGENTS_RUNS_DIR=<path>` overrides the run store location (default `.agents/runs/`).
 - `scripts/agent.sh` stays usable standalone: it records usage only when a caller exports
   `AGENT_USAGE_FILE`. `scripts/implement.sh` and `scripts/review.sh` set this for you.
+- `IMPLEMENTER_MAX_BUDGET_USD` (default 5.00) and `IMPLEMENTER_TIMEOUT_SECONDS` (default 1800;
+  0 disables) cap a headless writable-implementer session; a tripped ceiling ends the run
+  non-zero, so finalization records it as `failed`, never `success`. See
+  [`.claude/agents/implementer.md`](../.claude/agents/implementer.md) ("Headless run guards")
+  for the full guard set (allowlist scope, budget/time ceiling, truthful finalization).
 
 Telemetry is strictly additive: a telemetry write or a GitHub comment failure is a
 non-blocking warning and never fails the underlying agent run.
