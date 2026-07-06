@@ -17,6 +17,8 @@ Environment:
   AGENT_PROVIDER_IMPLEMENTER / AGENT_PROVIDER  provider default, if --provider is omitted
   AGENT_MODEL_IMPLEMENTER / AGENT_MODEL_<PROVIDER>  model default, if --model is omitted
   IMPLEMENTER_CODEX_OPT_IN=1  allow writable Codex runs after accepting the data-boundary policy
+  IMPLEMENTER_MAX_BUDGET_USD  backstop dollar cap for the Claude --print session (default 5.00)
+  IMPLEMENTER_TIMEOUT_SECONDS wall-clock ceiling around the dispatch (default 1800; 0 disables)
 USAGE
   exit 2
 }

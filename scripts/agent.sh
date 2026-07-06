@@ -129,23 +129,41 @@ if [ "$WRITABLE" -eq 1 ] && [ "$NAME" != "implementer" ]; then
   die "--writable is reserved for the implementer; reviewers and other specialists stay read-only"
 fi
 
+# Headless writable-implementer guards (backstop ceilings, not normal-run limits).
+# A stuck or looping implementer session must fail cheaply rather than run away, so
+# the writable path gets a provider-native budget cap and a wall-clock timeout. Both
+# are configurable via environment with safe defaults and apply only to the writable
+# implementer (reviewers are read-only reasoning and are left unguarded). A tripped
+# guard exits non-zero, so finalization records the run as failed, never success.
+#   IMPLEMENTER_MAX_BUDGET_USD    Claude --max-budget-usd cap for --print (default 5.00)
+#   IMPLEMENTER_TIMEOUT_SECONDS   wall-clock ceiling around dispatch (default 1800; 0 = off)
+IMPLEMENTER_MAX_BUDGET_USD="${IMPLEMENTER_MAX_BUDGET_USD:-5.00}"
+IMPLEMENTER_TIMEOUT_SECONDS="${IMPLEMENTER_TIMEOUT_SECONDS:-1800}"
+
 CLAUDE_IMPLEMENTER_TOOLS="Read Grep Glob Edit Write Bash(git status:*) Bash(git diff:*) Bash(git add:*) Bash(git commit:*) Bash(git push:*) Bash(git switch:*) Bash(git branch:*) Bash(git rev-parse:*) Bash(git log:*) Bash(git show:*) Bash(git fetch:*) Bash(git merge-base:*) Bash(git ls-files:*) Bash(git grep:*) Bash(gh auth status:*) Bash(gh issue view:*) Bash(gh issue comment:*) Bash(gh pr create:*) Bash(gh pr view:*) Bash(gh pr edit:*) Bash(gh pr status:*) Bash(gh pr checks:*) Bash(terraform init:*) Bash(terraform validate:*) Bash(terraform fmt:*) Bash(terraform plan:*) Bash(terraform show:*) Bash(terraform output:*) Bash(terraform providers:*) Bash(terraform version:*) Bash(tflint:*) Bash(checkov:*) Bash(conftest:*) Bash(infracost:*) Bash(shellcheck:*) Bash(bash -n:*) Bash(bash tests/*.sh:*) Bash(tests/*.sh:*) Bash(scripts/preflight.sh:*) Bash(scripts/new-stack.sh:*) Bash(scripts/check.sh:*) Bash(scripts/plan.sh:*) Bash(scripts/lock.sh:*) Bash(scripts/scan-secrets.sh:*) Bash(scripts/review.sh:*) Bash(scripts/smoke.sh:*) Bash(scripts/runs.sh:*)"
 CLAUDE_IMPLEMENTER_DENY="Bash(terraform apply:*) Bash(terraform destroy:*)"
 
 run_claude() {
   local tools="Read Grep Glob"
   local deny=()
+  # Backstop guards apply to the writable implementer only; reviewers stay unguarded.
+  local timeout_secs=0
   if [ "$WRITABLE" -eq 1 ]; then
     tools="$CLAUDE_IMPLEMENTER_TOOLS"
     deny=(--disallowedTools "$CLAUDE_IMPLEMENTER_DENY")
+    timeout_secs="$IMPLEMENTER_TIMEOUT_SECONDS"
   fi
   # Rubric as an appended system prompt; the piped stdin is the task/context.
   set -- claude -p --append-system-prompt "$RUBRIC" --allowedTools "$tools"
   [ "${#deny[@]}" -gt 0 ] && set -- "$@" "${deny[@]}"
+  # Provider-native budget cap (writable implementer only; --print sessions).
+  [ "$WRITABLE" -eq 1 ] && [ -n "$IMPLEMENTER_MAX_BUDGET_USD" ] \
+    && set -- "$@" --max-budget-usd "$IMPLEMENTER_MAX_BUDGET_USD"
   [ -n "$MODEL" ] && set -- "$@" --model "$MODEL"
   if [ "${AGENT_DRY_RUN:-0}" = "1" ]; then
     printf 'DRY-RUN provider=claude model=%s writable=%s tools=[%s]\n' "${MODEL:-default}" "$WRITABLE" "$tools"
     [ "${#deny[@]}" -gt 0 ] && printf 'DENY: %s\n' "$CLAUDE_IMPLEMENTER_DENY"
+    [ "$WRITABLE" -eq 1 ] && printf 'GUARDS: budget=$%s timeout=%ss\n' "$IMPLEMENTER_MAX_BUDGET_USD" "$timeout_secs"
     printf 'CMD: %s\n' "$*"
     return 0
   fi
@@ -154,10 +172,16 @@ run_claude() {
     # message text a plain run prints, so downstream stdout parsing is unchanged.
     local raw rc=0
     raw="$(mktemp)"
-    printf '%s' "$CONTEXT" | "$@" --output-format json >"$raw" || rc=$?
+    printf '%s' "$CONTEXT" | run_with_timeout "$timeout_secs" "$@" --output-format json >"$raw" || rc=$?
     if [ "$rc" -eq 0 ] && jq -e . >/dev/null 2>&1 <"$raw"; then
       jq -r '.result // ""' "$raw"
       telemetry_usage_from_claude_json "$raw" >"$AGENT_USAGE_FILE" 2>/dev/null || true
+      # Truthfulness: a budget/limit stop can print a result at exit 0 while flagging
+      # is_error. Treat that as a failure so the run is never recorded as success.
+      if [ "$(jq -r '.is_error // false' "$raw" 2>/dev/null)" = "true" ]; then
+        warn "claude reported is_error (subtype: $(jq -r '.subtype // "unknown"' "$raw" 2>/dev/null)); treating run as failed"
+        rc=1
+      fi
     else
       cat "$raw"
       telemetry_usage_unavailable >"$AGENT_USAGE_FILE" 2>/dev/null || true
@@ -165,14 +189,17 @@ run_claude() {
     rm -f "$raw"
     return "$rc"
   fi
-  printf '%s' "$CONTEXT" | "$@"
+  printf '%s' "$CONTEXT" | run_with_timeout "$timeout_secs" "$@"
 }
 
 run_codex() {
   local sandbox="read-only"
+  # Wall-clock guard for the writable implementer only (Codex exposes no budget flag).
+  local timeout_secs=0
   if [ "$WRITABLE" -eq 1 ]; then
     [ "${IMPLEMENTER_CODEX_OPT_IN:-0}" = "1" ] || die "writable Codex implementer runs are disabled unless IMPLEMENTER_CODEX_OPT_IN=1"
     sandbox="workspace-write"
+    timeout_secs="$IMPLEMENTER_TIMEOUT_SECONDS"
   fi
   local last; last="$(mktemp)"
   # Rubric + task combined as the instruction; final message captured cleanly via -o.
@@ -185,6 +212,7 @@ $CONTEXT"
   [ -n "$MODEL" ] && set -- codex exec --sandbox "$sandbox" --ask-for-approval never --skip-git-repo-check -C "$REPO_ROOT" --model "$MODEL" -o "$last" -
   if [ "${AGENT_DRY_RUN:-0}" = "1" ]; then
     printf 'DRY-RUN provider=codex model=%s writable=%s sandbox=%s\n' "${MODEL:-default}" "$WRITABLE" "$sandbox"
+    [ "$WRITABLE" -eq 1 ] && printf 'GUARDS: timeout=%ss (no provider budget flag on codex)\n' "$timeout_secs"
     [ "$WRITABLE" -eq 1 ] && [ "$NAME" = "implementer" ] && printf 'GUARDRAIL: terraform apply/destroy blocked via PATH shim\n'
     printf 'CMD: %s\n' "$*"
     rm -f "$last"
@@ -224,11 +252,11 @@ SHIM
     # Tee the event stream so we can best-effort parse a token count from it.
     # pipefail preserves codex's exit status (a failed run still aborts here).
     local stream; stream="$(mktemp)"
-    printf '%s' "$prompt" | "$@" 2>&1 | tee "$stream" >&2
+    printf '%s' "$prompt" | run_with_timeout "$timeout_secs" "$@" 2>&1 | tee "$stream" >&2
     telemetry_usage_from_codex "$stream" >"$AGENT_USAGE_FILE" 2>/dev/null || true
     rm -f "$stream"
   else
-    printf '%s' "$prompt" | "$@" 1>&2
+    printf '%s' "$prompt" | run_with_timeout "$timeout_secs" "$@" 1>&2
   fi
   cat "$last"
   rm -f "$last"
