@@ -21,6 +21,8 @@
 #   telemetry_init_run <dir> <kind> <agent> <provider> <model> <issue> <parent>
 #   telemetry_finalize_run <dir> <status> <exit> <branch> <pr_url> <usage-file>
 #   telemetry_usage_from_claude_json <file> -> prints normalized usage JSON
+#   telemetry_claude_stream_result <file>   -> prints the final result event (stream-json)
+#   telemetry_usage_from_claude_stream <file> -> prints normalized usage JSON (stream-json)
 #   telemetry_usage_from_codex <file>       -> prints normalized usage JSON
 #   telemetry_usage_unavailable             -> prints the unavailable usage JSON
 #   telemetry_scrub                         -> filter stdin, redacting identifiers
@@ -74,6 +76,27 @@ telemetry_usage_from_claude_json() {
       else {input: null, output: null, total: null, source: "unavailable"}
       end
   ' "$file" 2>/dev/null || telemetry_usage_unavailable
+}
+
+# Extract the final result event from a Claude `--output-format stream-json`
+# transcript (JSONL). Prints that event as compact JSON, or nothing if absent
+# (for example a run killed by a guard before it emitted a result). Tolerates
+# non-JSON lines in the stream.
+telemetry_claude_stream_result() {
+  local file="$1"
+  [ -s "$file" ] || return 0
+  jq -Rc 'fromjson? | select(.type=="result")' "$file" 2>/dev/null | tail -1
+}
+
+# Normalized usage from a Claude stream-json transcript. The final result event
+# carries the same `.usage`/`.result` shape as the buffered `--output-format json`
+# output, so usage parsing is shared with telemetry_usage_from_claude_json.
+telemetry_usage_from_claude_stream() {
+  local file="$1" resultf
+  resultf="$(mktemp)"
+  telemetry_claude_stream_result "$file" > "$resultf"
+  telemetry_usage_from_claude_json "$resultf"
+  rm -f "$resultf"
 }
 
 # Best-effort parse of Codex output for a token count. Codex does not expose a

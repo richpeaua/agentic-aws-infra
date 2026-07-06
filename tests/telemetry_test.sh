@@ -48,6 +48,30 @@ echo '{"result":"hi"}' > "$TMP/nousage.json"
 check "missing usage -> unavailable" \
   '[ "$(telemetry_usage_from_claude_json "$TMP/nousage.json" | jq -r .source)" = unavailable ]'
 
+# stream-json transcript: a synthetic JSONL with a non-JSON stray line, an
+# assistant event, and a final result event carrying .result + .usage.
+{
+  echo '{"type":"system","subtype":"init"}'
+  echo 'a stray non-JSON warning line'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit"}]}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"result":"Opened PR.","usage":{"input_tokens":100,"cache_read_input_tokens":20,"output_tokens":30}}'
+} > "$TMP/stream.jsonl"
+check "stream result event extracted" \
+  '[ "$(telemetry_claude_stream_result "$TMP/stream.jsonl" | jq -r .result)" = "Opened PR." ]'
+check "stream tolerates non-JSON lines" \
+  '[ "$(telemetry_claude_stream_result "$TMP/stream.jsonl" | jq -r .subtype)" = success ]'
+telemetry_usage_from_claude_stream "$TMP/stream.jsonl" > "$TMP/susage.json"
+check "stream usage input sums base+cache" '[ "$(jq -r .input "$TMP/susage.json")" = 120 ]'
+check "stream usage total = in+out" '[ "$(jq -r .total "$TMP/susage.json")" = 150 ]'
+check "stream usage source tagged claude" '[ "$(jq -r .source "$TMP/susage.json")" = claude ]'
+
+# A stream with no result event (e.g. killed by a guard) -> empty result, unavailable usage.
+{ echo '{"type":"system","subtype":"init"}'; echo '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'; } > "$TMP/partial.jsonl"
+check "partial stream has no result event" \
+  '[ -z "$(telemetry_claude_stream_result "$TMP/partial.jsonl")" ]'
+check "partial stream usage -> unavailable" \
+  '[ "$(telemetry_usage_from_claude_stream "$TMP/partial.jsonl" | jq -r .source)" = unavailable ]'
+
 # Finalize with a usage file -> status/exit/duration/token usage populated.
 telemetry_finalize_run "$dir" success 0 feat/x https://example.com/pr/1 "$TMP/usage.json"
 check "finalize sets success" '[ "$(jq -r .status "$dir/metadata.json")" = success ]'
