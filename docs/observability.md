@@ -14,7 +14,12 @@ Every telemetry-enabled run creates a directory under `.agents/runs/<run-id>/`:
 - `metadata.json` - run id, kind, agent, provider, model, issue, parent, status,
   start/end time, duration, exit code, branch, PR URL, and token usage.
 - `prompt.txt` - the prompt/context handed to the agent.
-- `stdout.txt`, `stderr.txt` - the agent's captured output streams.
+- `stdout.txt`, `stderr.txt` - the agent's captured output streams. For the writable
+  implementer, `stdout.txt` holds the final message and `stderr.txt` carries the live
+  progress digest (one line per tool call, plus session-start and result markers).
+- `stream.jsonl` - writable Claude implementer only: the full `stream-json` event
+  transcript, written incrementally so a long run can be tailed live
+  (`tail -f .agents/runs/<id>/stream.jsonl`). Local-only; never posted to GitHub.
 - `usage.json` - normalized provider token usage (implementer runs).
 - `artifacts/` - review panel only: the shared tool output (diff, plan, checkov,
   conftest, tflint, infracost) plus each reviewer's context/output.
@@ -32,8 +37,9 @@ identifiers). Never commit it. See `.agents/README.md`.
 ## Token usage
 
 Usage is best-effort and never estimated. When the provider's structured output exposes
-it (Claude Code `--output-format json`), `token_usage` is populated with a `source` of
-`claude` (or `codex`). When it is not available, `token_usage` is
+it, `token_usage` is populated with a `source` of `claude` (or `codex`): reviewers use
+Claude Code `--output-format json`, and the writable implementer parses it from the final
+result event of the `stream-json` transcript. When it is not available, `token_usage` is
 `{input:null, output:null, total:null, source:"unavailable"}`.
 
 ## GitHub comments

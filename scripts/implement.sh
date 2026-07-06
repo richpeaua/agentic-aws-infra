@@ -152,13 +152,16 @@ args=(implementer --provider "$PROVIDER" --writable)
 rc=0
 if telemetry_enabled; then
   export AGENT_USAGE_FILE="$USAGE_FILE"
+  # Durable, git-ignored transcript of the writable Claude stream (live progress
+  # trail; the launcher tails it to stderr as a compact digest). Local-only.
+  export AGENT_STREAM_FILE="$RUN_DIR/stream.jsonl"
   set +e
   "$REPO_ROOT/scripts/agent.sh" "${args[@]}" < "$PROMPT_FILE" \
     > >(tee "$RUN_DIR/stdout.txt") \
     2> >(tee "$RUN_DIR/stderr.txt" >&2)
   rc=$?
   set -e
-  unset AGENT_USAGE_FILE
+  unset AGENT_USAGE_FILE AGENT_STREAM_FILE
 
   branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   pr_url=""

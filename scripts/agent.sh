@@ -140,6 +140,22 @@ fi
 IMPLEMENTER_MAX_BUDGET_USD="${IMPLEMENTER_MAX_BUDGET_USD:-5.00}"
 IMPLEMENTER_TIMEOUT_SECONDS="${IMPLEMENTER_TIMEOUT_SECONDS:-1800}"
 
+# Compact, low-noise progress digest for the writable implementer's stream-json
+# events. One line per tool call plus session-start and result markers; content
+# text is summarized by length, not dumped. This is rendered to stderr for live
+# progress and lands in the git-ignored run store, never in a GitHub comment.
+# `fromjson?` skips any non-JSON line so a stray warning cannot break the digest.
+CLAUDE_STREAM_DIGEST='
+  fromjson?
+  | if (.type == "system" and .subtype == "init") then "  · session start"
+    elif .type == "assistant" then
+      ( .message.content[]?
+        | if .type == "tool_use" then "  · tool: \(.name)"
+          elif .type == "text" then "  · text (\((.text // "" | length)) chars)"
+          else empty end )
+    elif .type == "result" then "  · result: \(.subtype // "done") (turns: \(.num_turns // "?"))"
+    else empty end'
+
 CLAUDE_IMPLEMENTER_TOOLS="Read Grep Glob Edit Write Bash(git status:*) Bash(git diff:*) Bash(git add:*) Bash(git commit:*) Bash(git push:*) Bash(git switch:*) Bash(git branch:*) Bash(git rev-parse:*) Bash(git log:*) Bash(git show:*) Bash(git fetch:*) Bash(git merge-base:*) Bash(git ls-files:*) Bash(git grep:*) Bash(gh auth status:*) Bash(gh issue view:*) Bash(gh issue comment:*) Bash(gh pr create:*) Bash(gh pr view:*) Bash(gh pr edit:*) Bash(gh pr status:*) Bash(gh pr checks:*) Bash(terraform init:*) Bash(terraform validate:*) Bash(terraform fmt:*) Bash(terraform plan:*) Bash(terraform show:*) Bash(terraform output:*) Bash(terraform providers:*) Bash(terraform version:*) Bash(tflint:*) Bash(checkov:*) Bash(conftest:*) Bash(infracost:*) Bash(shellcheck:*) Bash(bash -n:*) Bash(bash tests/*.sh:*) Bash(tests/*.sh:*) Bash(scripts/preflight.sh:*) Bash(scripts/new-stack.sh:*) Bash(scripts/check.sh:*) Bash(scripts/plan.sh:*) Bash(scripts/lock.sh:*) Bash(scripts/scan-secrets.sh:*) Bash(scripts/review.sh:*) Bash(scripts/smoke.sh:*) Bash(scripts/runs.sh:*)"
 CLAUDE_IMPLEMENTER_DENY="Bash(terraform apply:*) Bash(terraform destroy:*)"
 
@@ -164,24 +180,54 @@ run_claude() {
     printf 'DRY-RUN provider=claude model=%s writable=%s tools=[%s]\n' "${MODEL:-default}" "$WRITABLE" "$tools"
     [ "${#deny[@]}" -gt 0 ] && printf 'DENY: %s\n' "$CLAUDE_IMPLEMENTER_DENY"
     [ "$WRITABLE" -eq 1 ] && printf 'GUARDS: budget=$%s timeout=%ss\n' "$IMPLEMENTER_MAX_BUDGET_USD" "$timeout_secs"
+    [ -n "${AGENT_USAGE_FILE:-}" ] && [ "$WRITABLE" -eq 1 ] && printf 'OUTPUT: stream-json (live digest to stderr; transcript to run store)\n'
     printf 'CMD: %s\n' "$*"
     return 0
   fi
+  if [ -n "${AGENT_USAGE_FILE:-}" ] && [ "$WRITABLE" -eq 1 ]; then
+    # Writable implementer: stream so long runs show live progress instead of a
+    # single end-of-run dump. The full JSONL transcript is tee'd to a file (the
+    # run store when AGENT_STREAM_FILE is set, else a temp), a compact digest is
+    # rendered to stderr live, and stdout still yields only the final result text.
+    # Nothing streamed is ever posted to GitHub; the transcript is local-only.
+    local stream_file rm_stream=0 resultf rc=0
+    if [ -n "${AGENT_STREAM_FILE:-}" ]; then stream_file="$AGENT_STREAM_FILE"; else stream_file="$(mktemp)"; rm_stream=1; fi
+    set +e
+    printf '%s' "$CONTEXT" \
+      | run_with_timeout "$timeout_secs" "$@" --output-format stream-json --verbose \
+      | tee "$stream_file" \
+      | jq -Rr --unbuffered "$CLAUDE_STREAM_DIGEST" >&2 2>/dev/null
+    rc=${PIPESTATUS[1]}
+    set -e
+    resultf="$(mktemp)"
+    telemetry_claude_stream_result "$stream_file" > "$resultf" 2>/dev/null || true
+    if [ "$rc" -eq 0 ] && [ -s "$resultf" ]; then
+      jq -r '.result // ""' "$resultf"
+      telemetry_usage_from_claude_json "$resultf" >"$AGENT_USAGE_FILE" 2>/dev/null || true
+      # Truthfulness: a budget/limit stop can emit a result event flagged is_error.
+      # Treat that as a failure so the run is never recorded as success.
+      if [ "$(jq -r '.is_error // false' "$resultf" 2>/dev/null)" = "true" ]; then
+        warn "claude reported is_error (subtype: $(jq -r '.subtype // "unknown"' "$resultf" 2>/dev/null)); treating run as failed"
+        rc=1
+      fi
+    else
+      # No result event (guard trip, crash, or unparseable stream): not a success.
+      telemetry_usage_unavailable >"$AGENT_USAGE_FILE" 2>/dev/null || true
+      [ "$rc" -eq 0 ] && rc=1
+    fi
+    rm -f "$resultf"
+    [ "$rm_stream" -eq 1 ] && rm -f "$stream_file"
+    return "$rc"
+  fi
   if [ -n "${AGENT_USAGE_FILE:-}" ]; then
-    # Structured output lets us record token usage. `.result` is the same final
-    # message text a plain run prints, so downstream stdout parsing is unchanged.
+    # Reviewer (read-only) path: buffered structured output, contract unchanged.
+    # `.result` is the same final message text a plain run prints.
     local raw rc=0
     raw="$(mktemp)"
     printf '%s' "$CONTEXT" | run_with_timeout "$timeout_secs" "$@" --output-format json >"$raw" || rc=$?
     if [ "$rc" -eq 0 ] && jq -e . >/dev/null 2>&1 <"$raw"; then
       jq -r '.result // ""' "$raw"
       telemetry_usage_from_claude_json "$raw" >"$AGENT_USAGE_FILE" 2>/dev/null || true
-      # Truthfulness: a budget/limit stop can print a result at exit 0 while flagging
-      # is_error. Treat that as a failure so the run is never recorded as success.
-      if [ "$(jq -r '.is_error // false' "$raw" 2>/dev/null)" = "true" ]; then
-        warn "claude reported is_error (subtype: $(jq -r '.subtype // "unknown"' "$raw" 2>/dev/null)); treating run as failed"
-        rc=1
-      fi
     else
       cat "$raw"
       telemetry_usage_unavailable >"$AGENT_USAGE_FILE" 2>/dev/null || true
