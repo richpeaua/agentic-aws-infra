@@ -16,10 +16,20 @@
 #
 #   printf '%s' "$context" | scripts/agent.sh security-reviewer --provider codex
 #
-# Provider/model routing (flags win, then env, then defaults):
+# Provider/model routing (flags win, then env, then frontmatter, then defaults):
 #   --provider / AGENT_PROVIDER_<AGENT> / AGENT_PROVIDER            (default: claude)
-#   --model    / AGENT_MODEL_<AGENT> / AGENT_MODEL_<PROVIDER>       (default: backend default)
+#   --model    / AGENT_MODEL_<AGENT> / AGENT_MODEL_<PROVIDER>
+#            > frontmatter model_<provider> (raw id) > frontmatter tier (via map)
+#            > backend default
 #   <AGENT> is the agent name uppercased with '-' replaced by '_' (e.g. SECURITY_REVIEWER).
+#
+# Model tiers. An agent file's frontmatter may declare a semantic `tier`
+# (heavy | standard | light) instead of a raw model id; the tier is resolved
+# against the central map below for the resolved provider, so roles express
+# intent once and the concrete ids live in a single place. A raw
+# `model_claude:` / `model_codex:` in frontmatter is an escape hatch that wins
+# over the tier for that provider. Nothing in the environment is required for
+# a tier to take effect: a `tier: heavy` role runs on the heavy model by default.
 #
 # Other env:
 #   AGENT_DRY_RUN=1   print the resolved provider/model/command instead of running it.
@@ -70,10 +80,61 @@ case "$PROVIDER" in
 esac
 has "$PROVIDER" || die "provider CLI '$PROVIDER' is not installed"
 
-# Resolve model: flag > per-agent env > per-provider env > empty (backend default).
+# Central tier -> model map, one column per provider. A role declares a semantic
+# tier in its frontmatter and this is the single place the concrete ids live.
+#   Claude: verified against the installed CLI's model aliases.
+#   Codex : ids verified against the installed codex CLI (codex-cli 0.142.5) -
+#           `gpt-5.5` is recognized by ~/.codex/config.toml
+#           ([tui.model_availability_nux]); `gpt-5.5-pro` and `gpt-5.4-mini`
+#           come from the codex-bundled openai-docs model map. See PR/#46.
+tier_to_model() {
+  # $1 provider, $2 tier -> prints the mapped model id, or nothing if unmapped.
+  case "$1:$2" in
+    claude:heavy)    printf 'claude-opus-4-8' ;;
+    claude:standard) printf 'claude-sonnet-4-6' ;;
+    claude:light)    printf 'claude-haiku-4-5' ;;
+    codex:heavy)     printf 'gpt-5.5-pro' ;;
+    codex:standard)  printf 'gpt-5.5' ;;
+    codex:light)     printf 'gpt-5.4-mini' ;;
+    *) : ;;
+  esac
+}
+
+# Read a scalar field from the agent file's YAML frontmatter (the first
+# `--- ... ---` block). Prints the trimmed, unquoted value, or nothing.
+frontmatter_field() {
+  # $1 field name, $2 file
+  awk -v key="$1" '
+    BEGIN { sep = 0; re = "^[[:space:]]*" key "[[:space:]]*:[[:space:]]*" }
+    /^---[[:space:]]*$/ { sep++; if (sep >= 2) exit; next }
+    sep == 1 && $0 ~ re {
+      v = $0; sub(re, "", v); sub(/[[:space:]]*$/, "", v); gsub(/^"|"$/, "", v)
+      print v; exit
+    }
+  ' "$2"
+}
+
+# Resolve model. Order: --model flag > AGENT_MODEL_<AGENT> > AGENT_MODEL_<PROVIDER>
+# > frontmatter model_<provider> (raw id) > frontmatter tier (via map) > empty
+# (backend default). Env and flag win over frontmatter; within frontmatter the
+# raw model_<provider> escape hatch wins over the tier.
 if [ -z "$MODEL" ]; then
   PROVIDER_KEY="$(printf '%s' "$PROVIDER" | tr '[:lower:]' '[:upper:]')"
   eval "MODEL=\"\${AGENT_MODEL_${AGENT_KEY}:-\${AGENT_MODEL_${PROVIDER_KEY}:-}}\""
+fi
+if [ -z "$MODEL" ]; then
+  RAW_MODEL="$(frontmatter_field "model_$PROVIDER" "$DEF")"
+  if [ -n "$RAW_MODEL" ]; then
+    MODEL="$RAW_MODEL"
+  else
+    TIER="$(frontmatter_field tier "$DEF")"
+    if [ -n "$TIER" ]; then
+      case "$TIER" in
+        heavy|standard|light) MODEL="$(tier_to_model "$PROVIDER" "$TIER")" ;;
+        *) warn "agent $NAME: unknown tier '$TIER' (expected heavy|standard|light); using backend default" ;;
+      esac
+    fi
+  fi
 fi
 
 # The portable rubric: the agent file body with YAML frontmatter stripped.
